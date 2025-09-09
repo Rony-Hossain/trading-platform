@@ -1,0 +1,76 @@
+############################
+# OS / Editor
+############################
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.history/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+############################
+# Python
+############################
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Packaging / build
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+sdist/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Test / coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.nox/
+.tox/
+
+############################
+# Environments & Secrets
+############################
+.env
+*.env
+.env.*
+**/.env
+**/.env.*
+.python-version
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+env/
+
+############################
+# Logs & runtime
+############################
+logs/
+*.log
+
+############################
+# Jupyter / notebooks
+############################
+.ipynb_checkpoints/
+
+############################
+# Project-specific
+############################
+.claude/
+services/**/__pycache__/
