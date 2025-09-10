@@ -1,0 +1,292 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: trading_db
+      POSTGRES_USER: trading_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    networks:
+      - backend
+    secrets:
+      - postgres_password
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_user -d trading_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == database
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+
+  redis-primary:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == database
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+
+  redis-replica:
+    image: redis:7-alpine
+    volumes:
+      - redis_replica_data:/data
+    networks:
+      - backend
+    command: redis-server --appendonly yes --replicaof redis-primary 6379
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == api
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+      restart_policy:
+        condition: on-failure
+
+  market-data-api:
+    image: trading-platform/market-data-api:latest
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=postgresql://trading_user@postgres:5432/trading_db
+      - REDIS_URL=redis://redis-replica:6379
+      - PORT=8002
+      - NODE_ENV=production
+    networks:
+      - backend
+      - frontend
+    secrets:
+      - postgres_password
+    depends_on:
+      - postgres
+      - redis-primary
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.role == api
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 30s
+
+  analysis-api:
+    image: trading-platform/analysis-api:latest
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=postgresql://trading_user@postgres:5432/trading_db
+      - REDIS_URL=redis://redis-replica:6379
+      - PORT=8003
+      - NODE_ENV=production
+    networks:
+      - backend
+      - frontend
+    secrets:
+      - postgres_password
+    depends_on:
+      - postgres
+      - redis-primary
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.role == api
+      resources:
+        limits:
+          memory: 1.5G
+          cpus: '1.0'
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 30s
+
+  alert-engine:
+    image: trading-platform/alert-engine:latest
+    environment:
+      - DATABASE_URL=postgresql://trading_user@postgres:5432/trading_db
+      - REDIS_URL=redis://redis-primary:6379
+      - ALERT_CHECK_INTERVAL_SEC=60
+      - NODE_ENV=production
+    networks:
+      - backend
+    secrets:
+      - postgres_password
+    depends_on:
+      - postgres
+      - redis-primary
+      - market-data-api
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == database
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+
+  trading-frontend:
+    image: trading-platform/trading-frontend:latest
+    environment:
+      - NEXT_PUBLIC_MARKET_DATA_API=https://api.yourdomain.com/market-data
+      - NEXT_PUBLIC_ANALYSIS_API=https://api.yourdomain.com/analysis
+      - NODE_ENV=production
+    networks:
+      - frontend
+    depends_on:
+      - market-data-api
+      - analysis-api
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.role == api
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+      restart_policy:
+        condition: on-failure
+      update_config:
+        parallelism: 1
+        delay: 10s
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - frontend
+    depends_on:
+      - trading-frontend
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == api
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+      restart_policy:
+        condition: on-failure
+
+  # Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == database
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.25'
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    networks:
+      - backend
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.role == database
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+
+networks:
+  frontend:
+    driver: overlay
+    attachable: true
+  backend:
+    driver: overlay
+    attachable: true
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  redis_replica_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+secrets:
+  postgres_password:
+    external: true
+    name: trading_postgres_password

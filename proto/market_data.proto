@@ -1,0 +1,117 @@
+syntax = "proto3";
+
+package trading.market_data;
+
+import "google/protobuf/timestamp.proto";
+
+// Market Data Service
+service MarketDataService {
+  // Get real-time stock price
+  rpc GetStockPrice(GetStockPriceRequest) returns (StockPrice);
+  
+  // Get historical OHLCV data
+  rpc GetHistoricalData(GetHistoricalDataRequest) returns (HistoricalDataResponse);
+  
+  // Search symbols
+  rpc SearchSymbols(SearchSymbolsRequest) returns (SearchSymbolsResponse);
+  
+  // Get company profile
+  rpc GetCompanyProfile(GetCompanyProfileRequest) returns (CompanyProfile);
+  
+  // Stream real-time quotes
+  rpc StreamQuotes(StreamQuotesRequest) returns (stream QuoteUpdate);
+  
+  // Batch get multiple stock prices
+  rpc GetBatchStockPrices(GetBatchStockPricesRequest) returns (GetBatchStockPricesResponse);
+}
+
+// Request/Response messages
+message GetStockPriceRequest {
+  string symbol = 1;
+}
+
+message GetHistoricalDataRequest {
+  string symbol = 1;
+  string period = 2; // e.g., "1y", "6mo", "1d"
+  optional int32 limit = 3;
+}
+
+message GetCompanyProfileRequest {
+  string symbol = 1;
+}
+
+message SearchSymbolsRequest {
+  string query = 1;
+  optional int32 limit = 2;
+}
+
+message StreamQuotesRequest {
+  repeated string symbols = 1;
+}
+
+message GetBatchStockPricesRequest {
+  repeated string symbols = 1;
+}
+
+message GetBatchStockPricesResponse {
+  repeated StockPrice prices = 1;
+}
+
+// Data types
+message StockPrice {
+  string symbol = 1;
+  double price = 2;
+  double change = 3;
+  double change_percent = 4;
+  int64 volume = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  double bid = 7;
+  double ask = 8;
+  double day_high = 9;
+  double day_low = 10;
+  double previous_close = 11;
+}
+
+message HistoricalCandle {
+  google.protobuf.Timestamp timestamp = 1;
+  double open = 2;
+  double high = 3;
+  double low = 4;
+  double close = 5;
+  int64 volume = 6;
+}
+
+message HistoricalDataResponse {
+  string symbol = 1;
+  repeated HistoricalCandle candles = 2;
+  string period = 3;
+}
+
+message SearchResult {
+  string symbol = 1;
+  string name = 2;
+  string exchange = 3;
+  string type = 4; // stock, etf, index, etc.
+}
+
+message SearchSymbolsResponse {
+  repeated SearchResult results = 1;
+}
+
+message CompanyProfile {
+  string symbol = 1;
+  string name = 2;
+  string sector = 3;
+  string industry = 4;
+  string description = 5;
+  string website = 6;
+  int64 market_cap = 7;
+  double beta = 8;
+  double pe_ratio = 9;
+  double dividend_yield = 10;
+}
+
+message QuoteUpdate {
+  StockPrice price = 1;
+  google.protobuf.Timestamp server_timestamp = 2;
+}

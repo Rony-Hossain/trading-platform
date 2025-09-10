@@ -1,0 +1,122 @@
+openapi: 3.0.3
+info:
+  title: Market Data API
+  version: 0.1.0
+  description: REST API for quotes, history, search, and profiles.
+servers:
+  - url: http://localhost:8002
+paths:
+  /stocks/{symbol}:
+    get:
+      summary: Get real-time stock price
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockPrice'
+  /stocks/{symbol}/history:
+    get:
+      summary: Get historical OHLCV data
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            example: 1y
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/HistoricalCandle'
+  /stocks/search:
+    get:
+      summary: Search symbols by text query
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchResult'
+  /stocks/{symbol}/profile:
+    get:
+      summary: Get company profile
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompanyProfile'
+components:
+  schemas:
+    StockPrice:
+      type: object
+      required: [symbol, price, change, changePercent, volume, timestamp]
+      properties:
+        symbol: { type: string }
+        price: { type: number, format: double }
+        change: { type: number, format: double }
+        changePercent: { type: number, format: double }
+        volume: { type: integer, format: int64 }
+        timestamp: { type: string, format: date-time }
+    HistoricalCandle:
+      type: object
+      required: [date, open, high, low, close, volume]
+      properties:
+        date: { type: string, format: date }
+        open: { type: number, format: double }
+        high: { type: number, format: double }
+        low: { type: number, format: double }
+        close: { type: number, format: double }
+        volume: { type: integer, format: int64 }
+    SearchResult:
+      type: object
+      properties:
+        symbol: { type: string }
+        name: { type: string }
+        exchange: { type: string }
+    CompanyProfile:
+      type: object
+      properties:
+        symbol: { type: string }
+        name: { type: string }
+        sector: { type: string }
+        industry: { type: string }
+        description: { type: string }
+

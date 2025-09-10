@@ -1,4 +1,4 @@
-﻿version: '3.8'
+version: '3.8'
 services:
   postgres:
     image: postgres:15
@@ -10,9 +10,66 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trading_user -d trading_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Market Data API placeholder
+  # market-data-api:
+  #   build: ./services/market-data
+  #   ports:
+  #     - "8002:8002"
+  #   environment:
+  #     - DATABASE_URL=postgresql://trading_user:trading_pass@postgres:5432/trading_db
+  #     - REDIS_URL=redis://redis:6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
+  # Analysis API placeholder
+  # analysis-api:
+  #   build: ./services/analysis
+  #   ports:
+  #     - "8003:8003"
+  #   environment:
+  #     - DATABASE_URL=postgresql://trading_user:trading_pass@postgres:5432/trading_db
+  #     - REDIS_URL=redis://redis:6379
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+
 volumes:
   postgres_data:
+  redis_data:

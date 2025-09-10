@@ -1,0 +1,174 @@
+syntax = "proto3";
+
+package trading.analysis;
+
+import "google/protobuf/timestamp.proto";
+import "market_data.proto";
+
+// Analysis Service
+service AnalysisService {
+  // Get technical analysis
+  rpc GetTechnicalAnalysis(GetTechnicalAnalysisRequest) returns (TechnicalAnalysisResponse);
+  
+  // Get chart patterns
+  rpc GetChartPatterns(GetChartPatternsRequest) returns (ChartPatternsResponse);
+  
+  // Get advanced indicators
+  rpc GetAdvancedIndicators(GetAdvancedIndicatorsRequest) returns (AdvancedIndicatorsResponse);
+  
+  // Get ML forecast
+  rpc GetForecast(GetForecastRequest) returns (ForecastResponse);
+  
+  // Get comprehensive analysis
+  rpc GetComprehensiveAnalysis(GetComprehensiveAnalysisRequest) returns (ComprehensiveAnalysisResponse);
+  
+  // Batch analysis for multiple symbols
+  rpc GetBatchAnalysis(GetBatchAnalysisRequest) returns (GetBatchAnalysisResponse);
+}
+
+// Request messages
+message GetTechnicalAnalysisRequest {
+  string symbol = 1;
+  string period = 2; // e.g., "6mo", "1y"
+}
+
+message GetChartPatternsRequest {
+  string symbol = 1;
+  string period = 2;
+}
+
+message GetAdvancedIndicatorsRequest {
+  string symbol = 1;
+  string period = 2;
+  repeated string indicators = 3; // e.g., ["rsi", "macd", "bollinger"]
+}
+
+message GetForecastRequest {
+  string symbol = 1;
+  string model_type = 2; // e.g., "ensemble", "lstm", "xgboost"
+  int32 horizon = 3; // forecast days
+}
+
+message GetComprehensiveAnalysisRequest {
+  string symbol = 1;
+  string period = 2;
+}
+
+message GetBatchAnalysisRequest {
+  repeated string symbols = 1;
+  string analysis_type = 2; // "technical", "forecast", "comprehensive"
+}
+
+// Response messages
+message TechnicalAnalysisResponse {
+  string symbol = 1;
+  double current_price = 2;
+  MovingAverages moving_averages = 3;
+  Oscillators oscillators = 4;
+  MACD macd = 5;
+  Signals signals = 6;
+  google.protobuf.Timestamp calculated_at = 7;
+}
+
+message ChartPatternsResponse {
+  string symbol = 1;
+  repeated ChartPattern patterns = 2;
+  google.protobuf.Timestamp calculated_at = 3;
+}
+
+message AdvancedIndicatorsResponse {
+  string symbol = 1;
+  map<string, IndicatorValue> indicators = 2;
+  google.protobuf.Timestamp calculated_at = 3;
+}
+
+message ForecastResponse {
+  string symbol = 1;
+  repeated double predictions = 2;
+  repeated google.protobuf.Timestamp prediction_dates = 3;
+  double current_price = 4;
+  string model_type = 5;
+  PriceAnalysis price_analysis = 6;
+  TrendForecast trend_forecast = 7;
+  double confidence_score = 8;
+  google.protobuf.Timestamp calculated_at = 9;
+}
+
+message ComprehensiveAnalysisResponse {
+  string symbol = 1;
+  TechnicalAnalysisResponse technical = 2;
+  ForecastResponse forecast = 3;
+  ChartPatternsResponse patterns = 4;
+  AdvancedIndicatorsResponse advanced_indicators = 5;
+  OverallAssessment overall_assessment = 6;
+}
+
+message GetBatchAnalysisResponse {
+  map<string, ComprehensiveAnalysisResponse> results = 1;
+}
+
+// Data types
+message MovingAverages {
+  double sma_20 = 1;
+  double sma_50 = 2;
+  double sma_200 = 3;
+  double ema_12 = 4;
+  double ema_26 = 5;
+}
+
+message Oscillators {
+  double rsi_14 = 1;
+  double stochastic_k = 2;
+  double stochastic_d = 3;
+  double williams_r = 4;
+}
+
+message MACD {
+  double macd = 1;
+  double signal = 2;
+  double histogram = 3;
+}
+
+message Signals {
+  string overall_signal = 1; // "BUY", "SELL", "HOLD"
+  double strength = 2; // 0.0 to 1.0
+  map<string, string> individual_signals = 3;
+}
+
+message ChartPattern {
+  string pattern_type = 1; // e.g., "head_and_shoulders", "triangle", "flag"
+  string direction = 2; // "bullish", "bearish"
+  double confidence = 3; // 0.0 to 1.0
+  google.protobuf.Timestamp start_date = 4;
+  google.protobuf.Timestamp end_date = 5;
+  double target_price = 6;
+  string description = 7;
+}
+
+message IndicatorValue {
+  double value = 1;
+  string signal = 2; // "BUY", "SELL", "NEUTRAL"
+  map<string, double> metadata = 3;
+}
+
+message PriceAnalysis {
+  double expected_return_1d = 1;
+  double expected_return_5d = 2;
+  double max_expected_gain = 3;
+  double max_expected_loss = 4;
+  double volatility_estimate = 5;
+}
+
+message TrendForecast {
+  string direction = 1; // "UP", "DOWN", "SIDEWAYS"
+  string confidence = 2; // "HIGH", "MEDIUM", "LOW"
+  double probability = 3; // 0.0 to 1.0
+}
+
+message OverallAssessment {
+  string recommendation = 1; // "STRONG_BUY", "BUY", "HOLD", "SELL", "STRONG_SELL"
+  double score = 2; // -1.0 to 1.0 (negative = bearish, positive = bullish)
+  repeated string key_factors = 3;
+  repeated string risks = 4;
+  repeated string opportunities = 5;
+}

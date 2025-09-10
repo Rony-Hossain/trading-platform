@@ -1,0 +1,207 @@
+openapi: 3.0.3
+info:
+  title: Analysis API
+  version: 0.1.0
+  description: Technical analysis, advanced indicators, patterns, and forecasts.
+servers:
+  - url: http://localhost:8003
+paths:
+  /analyze/{symbol}:
+    get:
+      summary: Get comprehensive technical analysis
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+        - name: period
+          in: query
+          required: false
+          schema: { type: string, example: 6mo }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  technical_analysis:
+                    $ref: '#/components/schemas/TechnicalAnalysis'
+  /analyze/{symbol}/patterns:
+    get:
+      summary: Get chart patterns
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+        - name: period
+          in: query
+          required: false
+          schema: { type: string, example: 3mo }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  patterns:
+                    type: array
+                    items: { type: object }
+  /analyze/{symbol}/advanced:
+    get:
+      summary: Get advanced indicators
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+        - name: period
+          in: query
+          required: false
+          schema: { type: string, example: 6mo }
+        - name: indicators
+          in: query
+          required: false
+          schema: { type: string, example: rsi,macd }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  advanced_indicators:
+                    type: object
+  /forecast/{symbol}:
+    get:
+      summary: Get ML forecast
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+        - name: model_type
+          in: query
+          required: false
+          schema: { type: string, example: ensemble }
+        - name: horizon
+          in: query
+          required: false
+          schema: { type: integer, example: 5 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ForecastData'
+  /analyze/{symbol}/comprehensive:
+    get:
+      summary: Get comprehensive analysis payload
+      parameters:
+        - name: symbol
+          in: path
+          required: true
+          schema: { type: string }
+        - name: period
+          in: query
+          required: false
+          schema: { type: string, example: 6mo }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /analyze/batch:
+    post:
+      summary: Batch analysis for multiple symbols
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                symbols:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+components:
+  schemas:
+    TechnicalAnalysis:
+      type: object
+      properties:
+        symbol: { type: string }
+        current_price: { type: number, format: double }
+        moving_averages:
+          type: object
+          properties:
+            sma_20: { type: number, format: double }
+            sma_50: { type: number, format: double }
+            sma_200: { type: number, format: double }
+            ema_12: { type: number, format: double }
+            ema_26: { type: number, format: double }
+        oscillators:
+          type: object
+          properties:
+            rsi_14: { type: number, format: double }
+        macd:
+          type: object
+          properties:
+            macd: { type: number, format: double }
+            signal: { type: number, format: double }
+            histogram: { type: number, format: double }
+        signals:
+          type: object
+          properties:
+            overall_signal: { type: string }
+            strength: { type: number, format: double }
+            individual_signals:
+              type: object
+              additionalProperties: { type: string }
+        patterns:
+          type: object
+          additionalProperties: true
+        advanced_indicators:
+          type: object
+          additionalProperties: true
+    ForecastData:
+      type: object
+      properties:
+        symbol: { type: string }
+        predictions:
+          type: array
+          items: { type: number, format: double }
+        dates:
+          type: array
+          items: { type: string, format: date }
+        current_price: { type: number, format: double }
+        model_type: { type: string }
+        price_analysis:
+          type: object
+          properties:
+            expected_return_1d: { type: number, format: double }
+            expected_return_5d: { type: number, format: double }
+            max_expected_gain: { type: number, format: double }
+            max_expected_loss: { type: number, format: double }
+        trend_forecast:
+          type: object
+          properties:
+            direction: { type: string }
+            confidence: { type: string }
+

@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package trading.alerts;
+
+import "google/protobuf/timestamp.proto";
+
+// Alert Engine Service
+service AlertService {
+  // Create a new alert
+  rpc CreateAlert(CreateAlertRequest) returns (CreateAlertResponse);
+  
+  // Get user alerts
+  rpc GetUserAlerts(GetUserAlertsRequest) returns (GetUserAlertsResponse);
+  
+  // Update alert
+  rpc UpdateAlert(UpdateAlertRequest) returns (UpdateAlertResponse);
+  
+  // Delete alert
+  rpc DeleteAlert(DeleteAlertRequest) returns (DeleteAlertResponse);
+  
+  // Evaluate alerts (internal service call)
+  rpc EvaluateAlerts(EvaluateAlertsRequest) returns (EvaluateAlertsResponse);
+  
+  // Stream alert notifications
+  rpc StreamAlertNotifications(StreamAlertNotificationsRequest) returns (stream AlertNotification);
+}
+
+// Alert types
+enum AlertType {
+  ALERT_TYPE_UNSPECIFIED = 0;
+  PRICE_ABOVE = 1;
+  PRICE_BELOW = 2;
+  PRICE_CHANGE = 3;
+  VOLUME_SPIKE = 4;
+  TECHNICAL_SIGNAL = 5;
+}
+
+// Request messages
+message CreateAlertRequest {
+  string user_id = 1;
+  string symbol = 2;
+  AlertType type = 3;
+  double target_value = 4;
+  int32 cooldown_sec = 5;
+  map<string, string> metadata = 6;
+}
+
+message GetUserAlertsRequest {
+  string user_id = 1;
+  optional bool active_only = 2;
+  optional int32 limit = 3;
+  optional int32 offset = 4;
+}
+
+message UpdateAlertRequest {
+  string alert_id = 1;
+  string user_id = 2;
+  optional AlertType type = 3;
+  optional double target_value = 4;
+  optional bool is_active = 5;
+  optional int32 cooldown_sec = 6;
+  optional map<string, string> metadata = 7;
+}
+
+message DeleteAlertRequest {
+  string alert_id = 1;
+  string user_id = 2;
+}
+
+message EvaluateAlertsRequest {
+  repeated string symbols = 1;
+  map<string, double> current_prices = 2;
+  map<string, int64> current_volumes = 3;
+}
+
+message StreamAlertNotificationsRequest {
+  string user_id = 1;
+}
+
+// Response messages
+message CreateAlertResponse {
+  Alert alert = 1;
+}
+
+message GetUserAlertsResponse {
+  repeated Alert alerts = 1;
+  int32 total_count = 2;
+}
+
+message UpdateAlertResponse {
+  Alert alert = 1;
+}
+
+message DeleteAlertResponse {
+  bool success = 1;
+}
+
+message EvaluateAlertsResponse {
+  repeated AlertTrigger triggered_alerts = 1;
+  int32 evaluated_count = 2;
+}
+
+// Data types
+message Alert {
+  string id = 1;
+  string user_id = 2;
+  string symbol = 3;
+  AlertType type = 4;
+  double target_value = 5;
+  bool is_active = 6;
+  bool is_triggered = 7;
+  int32 cooldown_sec = 8;
+  map<string, string> metadata = 9;
+  google.protobuf.Timestamp created_at = 10;
+  optional google.protobuf.Timestamp triggered_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+}
+
+message AlertTrigger {
+  string id = 1;
+  string alert_id = 2;
+  string user_id = 3;
+  string symbol = 4;
+  AlertType type = 5;
+  double target_value = 6;
+  double observed_value = 7;
+  string message = 8;
+  google.protobuf.Timestamp triggered_at = 9;
+}
+
+message AlertNotification {
+  AlertTrigger trigger = 1;
+  Alert alert = 2;
+  string notification_type = 3; // "TRIGGERED", "COOLDOWN_EXPIRED", etc.
+  google.protobuf.Timestamp timestamp = 4;
+}

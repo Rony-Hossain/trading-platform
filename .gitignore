@@ -13,7 +13,33 @@ Thumbs.db
 .pytype/
 
 ############################
-# Python
+# Node.js / Frontend
+############################
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+out/
+build/
+dist/
+
+# Nx specific
+.nx/
+.nx/installation
+.nx/cache
+.nx/workspace-data
+
+# Frontend cache and build artifacts
+**/node_modules/
+**/.next/
+**/.nx/
+**/out/
+**/build/
+**/dist/
+
+############################
+# Python / Backend
 ############################
 __pycache__/
 *.py[cod]
@@ -42,6 +68,35 @@ htmlcov/
 .nox/
 .tox/
 
+# Virtual envs
+.venv/
+venv/
+ENV/
+env/
+
+# ML Models and Data
+*.pkl
+*.joblib
+*.h5
+*.hdf5
+models/
+training_data/
+
+############################
+# Database
+############################
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+postgres_data/
+redis_data/
+
+############################
+# Docker
+############################
+.dockerignore
+
 ############################
 # Environments & Secrets
 ############################
@@ -52,17 +107,19 @@ htmlcov/
 **/.env.*
 .python-version
 
-# Virtual envs
-.venv/
-venv/
-ENV/
-env/
+# API Keys and secrets
+secrets/
+*.key
+*.pem
+*.crt
+*.p12
 
 ############################
 # Logs & runtime
 ############################
 logs/
 *.log
+log/
 
 ############################
 # Jupyter / notebooks
@@ -74,3 +131,29 @@ logs/
 ############################
 .claude/
 services/**/__pycache__/
+
+# SSL certificates (keep example/template files)
+nginx/ssl/*.crt
+nginx/ssl/*.key
+nginx/ssl/*.pem
+!nginx/ssl/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+.tmp/
+
+# OS generated files
+.DS_Store?
+ehthumbs.db
+Icon?
+Thumbs.db
+
+# IDE specific
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*.backup

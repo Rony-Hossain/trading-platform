@@ -1,0 +1,7 @@
+# This file ensures the ssl directory is tracked by git
+# Add your SSL certificates here:
+# - cert.pem
+# - key.pem
+# 
+# For development, you can generate self-signed certificates:
+# openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
