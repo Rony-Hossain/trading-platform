@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Data Service - Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/date-fns@2.29.3/index.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: #f8fafc;
+            color: #1e293b;
+            line-height: 1.6;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 0 1rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .dashboard {
+            padding: 2rem 0;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px -8px rgba(0, 0, 0, 0.2);
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #3b82f6;
+            margin-bottom: 0.5rem;
+        }
+
+        .metric-label {
+            color: #64748b;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .metric-change {
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        .change-positive { color: #10b981; }
+        .change-negative { color: #ef4444; }
+        .change-neutral { color: #64748b; }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .chart-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+        }
+
+        .chart-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: #1e293b;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .distribution-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .table-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+            overflow: hidden;
+        }
+
+        .table-header {
+            background: #f8fafc;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #e2e8f0;
+            font-weight: 600;
+            color: #1e293b;
+        }
+
+        .table-content {
+            padding: 1.5rem;
+        }
+
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .data-table th,
+        .data-table td {
+            text-align: left;
+            padding: 0.75rem 0.5rem;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .data-table th {
+            font-weight: 600;
+            color: #475569;
+            font-size: 0.875rem;
+        }
+
+        .data-table tr:hover {
+            background-color: #f8fafc;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+
+        .status-high { background-color: #10b981; }
+        .status-medium { background-color: #f59e0b; }
+        .status-low { background-color: #ef4444; }
+
+        .refresh-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            margin-bottom: 1rem;
+        }
+
+        .refresh-btn:hover {
+            background: #2563eb;
+        }
+
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .metric-value {
+                font-size: 2rem;
+            }
+        }
+
+        .tooltip {
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>Event Analytics Dashboard</h1>
+            <p>Real-time insights and performance metrics for event data</p>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="container">
+            <button class="refresh-btn" onclick="refreshDashboard()">
+                🔄 Refresh Data
+            </button>
+
+            <!-- Metrics Overview -->
+            <div class="metrics-grid" id="metricsGrid">
+                <!-- Metrics will be populated here -->
+            </div>
+
+            <!-- Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3 class="chart-title">Event Volume Trend (7 Days)</h3>
+                    <div class="chart-container">
+                        <canvas id="eventVolumeChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Impact Score Trend (7 Days)</h3>
+                    <div class="chart-container">
+                        <canvas id="impactScoreChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Distribution Charts -->
+            <div class="distribution-grid">
+                <div class="chart-card">
+                    <h3 class="chart-title">Events by Category</h3>
+                    <div class="chart-container">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Events by Status</h3>
+                    <div class="chart-container">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Impact Distribution</h3>
+                    <div class="chart-container">
+                        <canvas id="impactChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Events by Source</h3>
+                    <div class="chart-container">
+                        <canvas id="sourceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Data Tables -->
+            <div class="distribution-grid">
+                <div class="table-card">
+                    <div class="table-header">Most Active Symbols</div>
+                    <div class="table-content">
+                        <table class="data-table" id="activeSymbolsTable">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Events</th>
+                                    <th>Trend</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">Trending Categories</div>
+                    <div class="table-content">
+                        <table class="data-table" id="trendingCategoriesTable">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Events</th>
+                                    <th>Growth</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="table-card">
+                    <div class="table-header">Source Reliability</div>
+                    <div class="table-content">
+                        <table class="data-table" id="sourceReliabilityTable">
+                            <thead>
+                                <tr>
+                                    <th>Source</th>
+                                    <th>Events</th>
+                                    <th>Headlines/Event</th>
+                                    <th>Avg Impact</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let charts = {};
+        let dashboardData = null;
+
+        // Chart color schemes
+        const colors = {
+            primary: '#3b82f6',
+            success: '#10b981',
+            warning: '#f59e0b',
+            danger: '#ef4444',
+            purple: '#8b5cf6',
+            indigo: '#6366f1',
+            pink: '#ec4899',
+            teal: '#14b8a6'
+        };
+
+        const chartColors = [
+            colors.primary, colors.success, colors.warning, colors.danger,
+            colors.purple, colors.indigo, colors.pink, colors.teal
+        ];
+
+        // Initialize dashboard
+        async function initDashboard() {
+            await loadDashboardData();
+            renderMetrics();
+            renderCharts();
+            renderTables();
+        }
+
+        // Load dashboard data from API
+        async function loadDashboardData() {
+            try {
+                document.body.classList.add('loading');
+                const response = await fetch('/analytics/dashboard');
+                dashboardData = await response.json();
+            } catch (error) {
+                console.error('Failed to load dashboard data:', error);
+                dashboardData = null;
+            } finally {
+                document.body.classList.remove('loading');
+            }
+        }
+
+        // Render metrics cards
+        function renderMetrics() {
+            if (!dashboardData) return;
+
+            const metricsGrid = document.getElementById('metricsGrid');
+            const summary = dashboardData.summary;
+            const trends = dashboardData.trends;
+
+            const metrics = [
+                {
+                    label: 'Total Events',
+                    value: summary.total_events.toLocaleString(),
+                    change: calculateChange(summary.total_events, summary.weekly_events),
+                    changeLabel: 'vs last week'
+                },
+                {
+                    label: 'Weekly Events',
+                    value: summary.weekly_events.toLocaleString(),
+                    change: trends.event_count.growth_rate,
+                    changeLabel: 'growth rate'
+                },
+                {
+                    label: 'Daily Events',
+                    value: summary.daily_events.toLocaleString(),
+                    change: null,
+                    changeLabel: 'last 24 hours'
+                },
+                {
+                    label: 'Avg Impact Score',
+                    value: summary.avg_impact_score.toFixed(1),
+                    change: trends.impact_score.growth_rate,
+                    changeLabel: 'trend'
+                },
+                {
+                    label: 'High Impact Events',
+                    value: summary.high_impact_events.toLocaleString(),
+                    change: null,
+                    changeLabel: 'score ≥ 7'
+                },
+                {
+                    label: 'Headline Coverage',
+                    value: summary.headline_coverage.toFixed(1) + '%',
+                    change: null,
+                    changeLabel: 'events with headlines'
+                }
+            ];
+
+            metricsGrid.innerHTML = metrics.map(metric => `
+                <div class="metric-card">
+                    <div class="metric-value">${metric.value}</div>
+                    <div class="metric-label">${metric.label}</div>
+                    ${metric.change !== null ? `
+                        <div class="metric-change ${getChangeClass(metric.change)}">
+                            ${getChangeIcon(metric.change)} ${Math.abs(metric.change).toFixed(1)}% ${metric.changeLabel}
+                        </div>
+                    ` : `
+                        <div class="metric-change change-neutral">${metric.changeLabel}</div>
+                    `}
+                </div>
+            `).join('');
+        }
+
+        // Render all charts
+        function renderCharts() {
+            if (!dashboardData) return;
+
+            renderTimelineChart('eventVolumeChart', dashboardData.charts.event_timeline, 'Events');
+            renderTimelineChart('impactScoreChart', dashboardData.charts.impact_timeline, 'Avg Impact Score');
+            renderPieChart('categoryChart', dashboardData.distributions.by_category);
+            renderPieChart('statusChart', dashboardData.distributions.by_status);
+            renderPieChart('impactChart', dashboardData.distributions.by_impact);
+            renderPieChart('sourceChart', dashboardData.distributions.by_source);
+        }
+
+        // Render timeline chart
+        function renderTimelineChart(canvasId, data, label) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            if (charts[canvasId]) {
+                charts[canvasId].destroy();
+            }
+
+            charts[canvasId] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(point => new Date(point.timestamp).toLocaleDateString()),
+                    datasets: [{
+                        label: label,
+                        data: data.map(point => point.value),
+                        borderColor: colors.primary,
+                        backgroundColor: colors.primary + '20',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: '#f1f5f9'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: '#f1f5f9'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render pie chart
+        function renderPieChart(canvasId, data) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            
+            if (charts[canvasId]) {
+                charts[canvasId].destroy();
+            }
+
+            const labels = Object.keys(data);
+            const values = Object.values(data);
+
+            charts[canvasId] = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: values,
+                        backgroundColor: chartColors.slice(0, labels.length),
+                        borderWidth: 2,
+                        borderColor: '#ffffff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Render data tables
+        function renderTables() {
+            if (!dashboardData) return;
+
+            renderActiveSymbolsTable();
+            renderTrendingCategoriesTable();
+            renderSourceReliabilityTable();
+        }
+
+        function renderActiveSymbolsTable() {
+            const tbody = document.querySelector('#activeSymbolsTable tbody');
+            const data = dashboardData.top_performers.active_symbols;
+
+            tbody.innerHTML = data.map(([symbol, count]) => `
+                <tr>
+                    <td><strong>${symbol}</strong></td>
+                    <td>${count}</td>
+                    <td>
+                        <span class="status-indicator status-high"></span>
+                        Active
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderTrendingCategoriesTable() {
+            const tbody = document.querySelector('#trendingCategoriesTable tbody');
+            const data = dashboardData.top_performers.trending_categories;
+
+            tbody.innerHTML = data.map(([category, count, growth]) => `
+                <tr>
+                    <td><strong>${category}</strong></td>
+                    <td>${count}</td>
+                    <td class="${getChangeClass(growth)}">
+                        ${getChangeIcon(growth)} ${Math.abs(growth).toFixed(1)}%
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderSourceReliabilityTable() {
+            const tbody = document.querySelector('#sourceReliabilityTable tbody');
+            const data = dashboardData.top_performers.source_reliability;
+
+            tbody.innerHTML = Object.entries(data).map(([source, stats]) => `
+                <tr>
+                    <td><strong>${source}</strong></td>
+                    <td>${stats.event_count}</td>
+                    <td>${stats.headlines_per_event.toFixed(2)}</td>
+                    <td>${stats.avg_impact_score.toFixed(1)}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Utility functions
+        function calculateChange(current, previous) {
+            if (previous === 0) return 0;
+            return ((current - previous) / previous) * 100;
+        }
+
+        function getChangeClass(change) {
+            if (change > 0) return 'change-positive';
+            if (change < 0) return 'change-negative';
+            return 'change-neutral';
+        }
+
+        function getChangeIcon(change) {
+            if (change > 0) return '↗';
+            if (change < 0) return '↘';
+            return '→';
+        }
+
+        // Refresh dashboard
+        async function refreshDashboard() {
+            await loadDashboardData();
+            renderMetrics();
+            renderCharts();
+            renderTables();
+        }
+
+        // Auto-refresh every 5 minutes
+        setInterval(refreshDashboard, 5 * 60 * 1000);
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', initDashboard);
+    </script>
+</body>
+</html>

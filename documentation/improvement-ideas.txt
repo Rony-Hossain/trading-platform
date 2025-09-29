@@ -1,0 +1,44 @@
+Timestamp: 2025-09-12
+
+System Upgrade Ideas and Missing Features
+
+Data & Coverage
+- Social sentiment: ingest Twitter/X, Reddit, StockTwits, Threads; enrich with NLP sentiment, topic modeling, entity linking to symbols; respect API ToS and rate limits.
+- Fundamentals: parse and store SEC filings (10-K/10-Q/8-K), earnings transcripts; compute factor library (valuation, quality, growth); maintain quarterly time series.
+- Alternative data: economic indicators (FRED), ETF flows, insider transactions, short interest; corporate actions normalization.
+- Market microstructure (optional): L2 quotes, spreads, volumes for intraday analytics (if data available/licensed).
+
+Backend & APIs
+- API Gateway: central auth, rate limiting, request tracing; unify CORS and error shapes; versioned routes.
+- AuthN/AuthZ: JWT access/refresh, roles/scopes; per-user quotas; audit logging.
+- Alert Engine: dedicated worker with rules DSL (price/volume/indicator thresholds, crossovers, pattern triggers); debounce/cooldown; idempotency keys; queue-backed (Redis streams/Celery/RQ).
+- Portfolio Service: CRUD, performance, risk metrics (beta, VaR, drawdowns), tax lots; transactions and corporate actions handling.
+- Caching strategy: layered (in-memory + Redis) with stampede protection and request coalescing; cache keys normalization.
+- Resilience: circuit breakers, exponential backoff, hedging requests across providers; fallback hierarchies with SLOs.
+- Time-series storage: TimescaleDB hypertables or native partitioning; retention policies; continuous aggregates.
+
+ML/Analysis
+- Forecasting: add probabilistic forecasts (quantiles), uncertainty calibration; champion–challenger model management with rolling retrains; Optuna for HPO; model registry.
+- Regime detection: HMM/Markov switching; volatility/momentum regime-aware signals.
+- Strategy layer: backtesting with realistic execution (costs/slippage/liquidity), position sizing (vol targeting, Kelly-lite), risk guards (max DD, daily loss caps).
+- Feature store: consistent features across training/inference; leakage-safe pipelines; artifact/version tracking (DVC/LakeFS).
+
+Frontend
+- Real-time: switch polling to WebSocket/SSE; reconnect/backoff; per-symbol subscriptions.
+- UX: alert management UI overhaul (Radix Toasts, keyboard navigation); code-split heavy charts; accessibility polish.
+- OpenAPI codegen: generate typed clients from contracts for zero-config endpoints.
+- Observability: client metrics/logs sampling; error boundaries with diagnostics.
+
+DevOps & Observability
+- CI/CD: GitHub Actions for lint/test/build; Docker image build/push; Nx caching; affected pipelines.
+- Secrets: use Docker/Swarm/K8s secrets; vault integration; remove secrets from envs.
+- Telemetry: Prometheus metrics, Grafana dashboards; distributed tracing (OpenTelemetry); structured logs (JSON).
+- Security: image scanning (Trivy), non-root containers, minimal base images; dependency auditing.
+
+Compliance & Governance
+- Data licensing: ensure vendor ToS compliance for Yahoo/Finnhub/social data; implement per-provider caps and attribution.
+- PII handling: encrypt sensitive user data; RBAC; detailed audit trails.
+
+Notes
+- Prioritize enabling WebSocket in frontend and extracting an Alert Engine worker next; these deliver immediate user value.
+

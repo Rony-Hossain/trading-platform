@@ -120,7 +120,7 @@ class FinnhubProvider(DataProvider):
         except Exception as e:
             logger.error(f"Finnhub historical error for {symbol}: {e}")
             return None
-    
+
     async def get_company_profile(self, symbol: str) -> Optional[Dict]:
         """Get company profile data"""
         try:
@@ -150,7 +150,7 @@ class FinnhubProvider(DataProvider):
         except Exception as e:
             logger.error(f"Finnhub company profile error for {symbol}: {e}")
             return None
-    
+
     async def get_news_sentiment(self, symbol: str) -> Optional[Dict]:
         """Get news sentiment for a symbol"""
         try:
@@ -175,4 +175,37 @@ class FinnhubProvider(DataProvider):
             
         except Exception as e:
             logger.error(f"Finnhub news sentiment error for {symbol}: {e}")
+            return None
+
+    async def get_intraday(self, symbol: str, interval: str = "1m") -> Optional[Dict]:
+        """Get intraday minute data from Finnhub"""
+        try:
+            await asyncio.sleep(self.rate_limit_delay)
+
+            end_date = datetime.now()
+            # fetch last trading day window (~6.5h = 390 minutes)
+            start_date = end_date - timedelta(hours=8)
+            start_ts = int(start_date.timestamp())
+            end_ts = int(end_date.timestamp())
+
+            resolution = '1'  # 1-minute
+            candles = await asyncio.to_thread(self.client.stock_candles, symbol, resolution, start_ts, end_ts)
+            if not candles or candles.get('s') != 'ok':
+                return None
+
+            data = []
+            for i, ts in enumerate(candles['t']):
+                date = datetime.fromtimestamp(ts)
+                data.append({
+                    "timestamp": date.isoformat(),
+                    "open": round(float(candles['o'][i]), 4),
+                    "high": round(float(candles['h'][i]), 4),
+                    "low": round(float(candles['l'][i]), 4),
+                    "close": round(float(candles['c'][i]), 4),
+                    "volume": int(candles['v'][i])
+                })
+
+            return {"symbol": symbol.upper(), "interval": interval, "data": data, "source": self.name}
+        except Exception as e:
+            logger.error(f"Finnhub intraday error for {symbol}: {e}")
             return None

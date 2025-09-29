@@ -69,3 +69,33 @@ class YahooFinanceProvider(DataProvider):
         except Exception as e:
             logger.error(f"Yahoo Finance historical error for {symbol}: {e}")
             return None
+
+    async def get_intraday(self, symbol: str, interval: str = "1m") -> Optional[Dict]:
+        try:
+            ticker = await asyncio.to_thread(yf.Ticker, symbol)
+            # Yahoo supports 1m with limited lookback (usually 7 days max). Use 1d window here.
+            hist = await asyncio.to_thread(ticker.history, period="1d", interval=interval)
+
+            if hist.empty:
+                return None
+
+            data = []
+            for date, row in hist.iterrows():
+                data.append({
+                    "timestamp": date.to_pydatetime().isoformat(),
+                    "open": round(float(row['Open']), 4),
+                    "high": round(float(row['High']), 4),
+                    "low": round(float(row['Low']), 4),
+                    "close": round(float(row['Close']), 4),
+                    "volume": int(row['Volume']) if 'Volume' in row else 0
+                })
+
+            return {
+                "symbol": symbol.upper(),
+                "interval": interval,
+                "data": data,
+                "source": self.name
+            }
+        except Exception as e:
+            logger.error(f"Yahoo Finance intraday error for {symbol}: {e}")
+            return None

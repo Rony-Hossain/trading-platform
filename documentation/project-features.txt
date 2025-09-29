@@ -1,0 +1,38 @@
+Timestamp: 2025-09-12
+
+Project Existing Features (by area)
+
+Database
+- PostgreSQL 17 with initialized schema and seed data via migrations/ (001_initial_schema.sql, seed_data.sql).
+- Redis 7 (appendonly) for caching and potential pub/sub.
+- Docker Compose services for Postgres and Redis with healthchecks and persisted volumes.
+- Scripts for DB init and verification (scripts/init-db.sh, scripts/test-db-connection.sql).
+- Optional storage path for historical candles via market-data-service (db_service integration hooks present).
+
+Backend
+- Market Data Service (services/market-data-service)
+  - Endpoints: / (root info), /health, /stocks/{symbol}/price, /stocks/{symbol}/history, /stocks/{symbol}/profile, /stocks/{symbol}/sentiment, /stocks/batch, /stocks/{symbol}/coverage, /admin/collect/{symbol}, /admin/stats, WebSocket /ws/{symbol}.
+  - Providers: Yahoo Finance (fallback) and Finnhub (if FINNHUB_API_KEY set), with rate limiting and graceful fallback.
+  - Caching: in-memory cache with TTL; periodic cleanup; real-time broadcast loop for WS subscribers.
+  - Background: startup tasks to init DB service and optional historical data collector; periodic broadcasting.
+  - Health and stats: provider availability, cache stats, websocket stats, database connectivity, data collector status.
+
+- Analysis Service (services/analysis-service)
+  - Endpoints: / (root info), /health, /analyze/{symbol}, /analyze/{symbol}/quick, /analyze/{symbol}/technical, /analyze/{symbol}/patterns, /analyze/{symbol}/advanced, /analyze/batch, /forecast/{symbol}, /forecast/batch (in code), /forecast/models/status.
+  - Technical indicators: RSI, MACD, moving averages, Bollinger, volatility, etc.
+  - Advanced indicators: Ichimoku, ADX, Parabolic SAR, MFI, CCI, VWAP; composite signals (market strength, volatility regime).
+  - Patterns: chart pattern recognition module.
+  - Forecasting: baseline ML forecasting scaffolding with model cache status.
+  - CORS enabled and structured logging.
+
+- Contracts and scaffolds
+  - OpenAPI specs for Market Data and Analysis APIs under documentation/contracts/.
+  - Additional service directories scaffolded (api-gateway, user-service, portfolio-service, sentiment-service, trading-engine-service, strategy-service, notification-service) for future work.
+
+Frontend
+- Next.js 15 (Nx) app at trading-frontend/apps/trading-web with TypeScript.
+- API client in lib/api.ts targeting Market Data (8002) and Analysis (8003) services via env vars.
+- Components present: Dashboard, StockChart, StockPrice, TechnicalIndicators, TechnicalAnalysis, TradingSignals, Portfolio, AlertsNotifications, MLForecast.
+- Auth components scaffolded: AuthPage, LoginForm, SignUpForm, UserProfile, ProtectedRoute; context for auth state; UI components (cards) and common lib utilities.
+- Real-time placeholder with polling fallback; WebSocket integration planned.
+

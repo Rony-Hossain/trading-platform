@@ -1,0 +1,121 @@
+# Prometheus configuration for trading platform monitoring
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'trading-platform'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - "rules/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Node Exporter (system metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # cAdvisor (container metrics)
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 30s
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 30s
+
+  # PostgreSQL metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 30s
+
+  # Market Data Service
+  - job_name: 'market-data-service'
+    static_configs:
+      - targets: ['market-data-api:8002']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+  # Analysis Service  
+  - job_name: 'analysis-service'
+    static_configs:
+      - targets: ['analysis-api:8003']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Portfolio Service
+  - job_name: 'portfolio-service'
+    static_configs:
+      - targets: ['portfolio-service:8004']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Sentiment Service
+  - job_name: 'sentiment-service'
+    static_configs:
+      - targets: ['sentiment-service:8005']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Fundamentals Service
+  - job_name: 'fundamentals-service'
+    static_configs:
+      - targets: ['fundamentals-service:8006']
+    metrics_path: '/metrics'
+    scrape_interval: 60s
+
+  # Strategy Service
+  - job_name: 'strategy-service'
+    static_configs:
+      - targets: ['strategy-service:8007']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Trading Frontend (if metrics enabled)
+  - job_name: 'trading-frontend'
+    static_configs:
+      - targets: ['trading-frontend:3000']
+    metrics_path: '/api/metrics'
+    scrape_interval: 30s
+
+  # API Gateway (if metrics enabled)
+  - job_name: 'api-gateway'
+    static_configs:
+      - targets: ['api-gateway:8001']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Custom application metrics
+  - job_name: 'trading-metrics'
+    static_configs:
+      - targets: ['market-data-api:8002', 'analysis-api:8003']
+    metrics_path: '/api/v1/metrics'
+    scrape_interval: 15s
+
+# Remote write configuration (optional - for long-term storage)
+# remote_write:
+#   - url: "https://prometheus-remote-write-endpoint/api/v1/write"
+#     basic_auth:
+#       username: "username"
+#       password: "password"

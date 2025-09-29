@@ -2,8 +2,6 @@
 # This file is automatically loaded by docker-compose in development
 # Use: docker-compose up -d (for local development)
 
-version: '3.8'
-
 services:
   postgres:
     environment:

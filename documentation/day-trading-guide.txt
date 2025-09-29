@@ -1,0 +1,95 @@
+Timestamp: 2025-09-12
+
+DAY TRADING AND OPTIONS TRADING PLAYBOOK
+
+NON-NEGOTIABLES
+- Risk per trade: 0.25–0.5% of account equity
+- Daily loss cap: 1–2% of equity; stop trading when reached
+- Max consecutive losses: stop after 3 losses; review before resuming
+- Trade liquid symbols only: tight spreads, deep books, high volume
+- Master one setup before adding more; process and journaling over P&L
+
+MARKET STRUCTURE BASICS
+- Time of day: open (9:30–10:30 ET) most volatile; midday chop; power hour (15:00–16:00) trend resolution
+- Auctions and gaps: opening/closing auctions can gap; plan for continuation or gap-fill
+- Liquidity: spreads and queue position impact slippage; avoid illiquid names
+
+CORE INTRADAY SETUPS
+- Opening Range Breakout (ORB): define first 5–15m range; enter on break; stop outside range; targets via measured move or VWAP
+- VWAP Plays: trend continuation above/below VWAP; mean-reversion to VWAP after exhaustion; avoid counter-trend during strong momentum
+- EMA Pullbacks: trend with 9/20 EMA; buy pullbacks to rising 9/20 with confirmation; stop past swing; partials at HOD/LOD or prior level
+- Gap-and-Go / Gap-Fill: catalyst gaps; either continuation with volume or fade to fill; use premarket levels
+- Volume Spike Reversal: parabolic move into HTF level; lower high + volume divergence; tight stop
+
+INDICATORS AND LEVELS
+- Baseline: VWAP, 9/20 EMA, ATR(14), RSI(14), volume bars; optional MACD histogram
+- Key levels: premark previous day high/low, overnight high/low, weekly/daily S/R, pivot points
+- Volatility: use ATR for stops and position sizing; adjust size when ATR expands/contracts
+
+ORDER EXECUTION
+- Order types: limit for entries; stop-limit for breakouts (reasonable limit offset); OCO brackets (stop + target)
+- Scaling: scale in only with high-quality signals; scale out into liquidity; avoid averaging down losers
+- Hotkeys: buy/sell, halve position, flatten; reduces latency and mental load
+
+RISK AND SIZING
+- Volatility-based sizing: shares = risk_dollars / stop_distance (use ATR multiple)
+- Hard stops: always place protective stops; honor them; no “hoping”
+- Portfolio limits: max 2–3 concurrent positions; avoid correlated positions; define max leverage and exposure
+
+OPTIONS TRADING BASICS
+- Greeks: delta (directional exposure), gamma (delta change, high near expiry), theta (time decay), vega (IV sensitivity)
+- Implied volatility: use IV rank; beware IV crush after events (earnings); prefer liquid chains (tight spreads)
+- Day-trading options structures:
+  - Debit verticals (bull call/bear put): defined risk, directional, less theta decay than naked long
+  - Credit spreads (bear call/bull put): fade at levels, positive theta; strict risk discipline required
+  - Broken-wing butterfly: defined risk around a target/pin; favorable RR if price hovers near body
+  - Straddle/strangle: for expected large move; need catalyst and IV expansion; manage IV crush risk carefully
+- 0DTE caution: extreme gamma/theta; keep size tiny; consider index options (e.g., SPX) for cash settlement
+
+REGULATORY AND OPERATIONS
+- PDT rule (US): < $25k equity on margin accounts → max 3 day trades per rolling 5 business days
+- Taxes: short-term gains taxed as ordinary income; track wash sales; assignment risk on American options
+- Margin and assignment: understand buying power reduction, early assignment handling for short options
+
+DAILY ROUTINE
+- Premarket (60–90m): scan news/catalysts, gappers, expected ranges; mark HTF levels; define A/B plans; set day’s risk
+- Opening hour: execute only planned setups; use bracket orders; avoid chasing; respect first halt/volatility pauses
+- Midday: reduce size and frequency; A+ setups only
+- Power hour: re-engage if trend/levels break; avoid late impulse trades without plan
+- Post-market: journal trades (setup, entry/stop/target, R multiples, mistakes); screenshot charts; weekly review
+
+PLAYBOOK TEMPLATE (PER SETUP)
+- Context: market regime, breadth, IV level, catalysts today
+- Trigger: objective conditions (e.g., ORB high break with volume and VWAP support)
+- Invalidation: specific level/time conditions
+- Entry/Stop/Targets: numeric plan; bracket details and partials logic
+- Risk: $ risk, expected RR, max slippage; position size formula
+- Checklist: confirm volume, spread, route, news risk, correlation
+- Post-trade notes: reasons to hold/exit; mistakes and improvements
+
+PLATFORM IMPLEMENTATION NOTES (THIS REPO)
+- Intraday data
+  - Add 1-minute historical endpoint and storage (yfinance interval='1m' or vendor); store last N days; partitions/hypertables
+  - UI: 1D minute chart with rolling last 60–120 minutes; sticky axes; toggle live mode
+- Real-time engine
+  - WebSocket push cadence 1s for selected symbols; ping/heartbeat; backoff/reconnect
+  - Alerts worker: Redis-backed rules: VWAP cross, ORB breaks, RSI extremes, % change, volume spikes; cooldown/idempotency
+- Options support
+  - Options chain endpoint: strikes, expiries, greeks, IV; caching; refresh cadence
+  - Strategy builder: debit/credit verticals first; compute breakevens, RR, theoreticals; P&L graph
+  - UI: chain table (filters by delta/IV rank), strategy builder, risk graph
+- Risk controls
+  - Server limits: daily loss cap, per-trade risk, max open positions; auto-flat on breach
+  - Journal service: auto-logging of orders/fills/PNL; tagging and metrics (expectancy, win rate, avg hold)
+- Execution
+  - Paper trading ticket: market/limit, bracket (TP/SL), partials; later integrate broker (Alpaca/IBKR)
+  - Hotkeys; latency indicators; health checks for data and broker connections
+
+CHECKLISTS
+- Pre-trade: market context aligned; setup conditions met; risk/size computed; order type selected; stop/target defined; news risk checked
+- During trade: move stop to reduce risk only after strong confirmation; scale out at planned levels; avoid adding to losers
+- Post-trade: log objectively; classify setup quality; tag mistakes (late entry, over-size, no stop, etc.)
+
+RISK DISCLOSURE REMINDER
+- Trading involves substantial risk; do not trade with money you cannot afford to lose. Past performance does not guarantee future results.
+

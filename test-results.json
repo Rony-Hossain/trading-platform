@@ -1,0 +1,285 @@
+{
+  "timestamp": "2025-09-20T00:51:25.136378",
+  "services": {
+    "market-data-api": {
+      "service": "market-data-api",
+      "url": "http://localhost:8002",
+      "status": "healthy",
+      "health_check": true,
+      "response_time": 27.82,
+      "endpoints_tested": {
+        "/": {
+          "path": "/",
+          "status": "success",
+          "response_time": 6.56,
+          "error": null
+        },
+        "/stocks/AAPL/quote": {
+          "path": "/stocks/AAPL/quote",
+          "status": "error (HTTP 404)",
+          "response_time": 2.08,
+          "error": "{\"detail\":\"Not Found\"}"
+        },
+        "/stocks/AAPL/candles?period=1d": {
+          "path": "/stocks/AAPL/candles?period=1d",
+          "status": "error (HTTP 404)",
+          "response_time": 1.51,
+          "error": "{\"detail\":\"Not Found\"}"
+        },
+        "/stocks/AAPL/intraday?interval=1m": {
+          "path": "/stocks/AAPL/intraday?interval=1m",
+          "status": "success",
+          "response_time": 223.23,
+          "error": null
+        },
+        "/ws/AAPL": {
+          "path": "/ws/AAPL",
+          "status": "websocket (skipped)",
+          "response_time": null,
+          "error": null
+        }
+      },
+      "error": null,
+      "health_data": {
+        "status": "healthy",
+        "service": "market-data-service",
+        "timestamp": "2025-09-20T04:51:20.593307",
+        "providers_status": {
+          "Yahoo Finance": true
+        },
+        "circuit_breakers": {
+          "total_providers": 2,
+          "healthy_providers": 2,
+          "unhealthy_providers": 0,
+          "overall_health": "healthy"
+        }
+      }
+    },
+    "analysis-api": {
+      "service": "analysis-api",
+      "url": "http://localhost:8003",
+      "status": "healthy",
+      "health_check": true,
+      "response_time": 5.01,
+      "endpoints_tested": {
+        "/": {
+          "path": "/",
+          "status": "success",
+          "response_time": 1.2,
+          "error": null
+        },
+        "/analyze/AAPL": {
+          "path": "/analyze/AAPL",
+          "status": "error (HTTP 500)",
+          "response_time": 223.58,
+          "error": "Internal Server Error"
+        },
+        "/forecast/AAPL": {
+          "path": "/forecast/AAPL",
+          "status": "success",
+          "response_time": 368.93,
+          "error": null
+        }
+      },
+      "error": null,
+      "health_data": {
+        "status": "healthy",
+        "service": "analysis-service",
+        "timestamp": "2025-09-20T04:51:20.836360",
+        "dependencies": {
+          "market_data_service": "http://market-data-api:8002",
+          "sentiment_service": "http://sentiment-service:8005",
+          "fundamentals_service": "http://fundamentals-service:8006"
+        }
+      }
+    },
+    "sentiment-service": {
+      "service": "sentiment-service",
+      "url": "http://localhost:8005",
+      "status": "healthy",
+      "health_check": true,
+      "response_time": 474.97,
+      "endpoints_tested": {
+        "/": {
+          "path": "/",
+          "status": "success",
+          "response_time": 2.25,
+          "error": null,
+          "sample_response": {
+            "service": "Sentiment Service",
+            "status": "running",
+            "version": "1.0.0",
+            "timestamp": "2025-09-20T04:51:21.907601",
+            "endpoints": {
+              "sentiment": "/sentiment/{symbol}",
+              "analysis": "/analysis/{symbol}",
+              "collect": "/collect",
+              "summary": "/summary/{symbol}",
+              "health": "/health"
+            }
+          }
+        },
+        "/stats": {
+          "path": "/stats",
+          "status": "success",
+          "response_time": 39.98,
+          "error": null,
+          "sample_response": {
+            "total_platforms": 0,
+            "total_symbols": 0,
+            "healthy_platforms": 0,
+            "total_posts_collected": 0,
+            "total_errors": 0,
+            "platform_stats": {},
+            "last_updated": "2025-09-20T04:51:21.946944"
+          }
+        },
+        "/posts/AAPL": {
+          "path": "/posts/AAPL",
+          "status": "error (HTTP 422)",
+          "response_time": 4.52,
+          "error": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"query\",\"source\"],\"msg\":\"Field required\",\"input\":null}]}"
+        },
+        "/summary/AAPL": {
+          "path": "/summary/AAPL",
+          "status": "error (HTTP 500)",
+          "response_time": 3.7,
+          "error": "{\"detail\":\"'SentimentAggregator' object has no attribute 'get_sentiment_summary'\"}"
+        }
+      },
+      "error": null,
+      "health_data": {
+        "status": "healthy",
+        "service": "sentiment-service",
+        "timestamp": "2025-09-20T04:51:21.437540",
+        "collectors": {
+          "twitter": false,
+          "reddit": false,
+          "news": true,
+          "threads": false,
+          "truthsocial": true,
+          "discord": false,
+          "telegram": false,
+          "bluesky": true
+        },
+        "analyzer": false
+      }
+    },
+    "fundamentals-service": {
+      "service": "fundamentals-service",
+      "url": "http://localhost:8006",
+      "status": "healthy",
+      "health_check": true,
+      "response_time": 6.98,
+      "endpoints_tested": {
+        "/": {
+          "path": "/",
+          "status": "success",
+          "response_time": 2.14,
+          "error": null,
+          "sample_response": {
+            "service": "fundamentals-service",
+            "status": "running",
+            "version": "0.1.0",
+            "timestamp": "2025-09-20T04:51:21.966062",
+            "endpoints": {
+              "earnings_calendar": "/earnings/calendar",
+              "earnings_upcoming": "/earnings/upcoming",
+              "earnings_monitor": "/earnings/{symbol}/monitor",
+              "earnings_sector": "/earnings/sector/{sector}",
+              "earnings_trend_revenue": "/earnings/trends/revenue",
+              "earnings_trend_margins": "/earnings/trends/margins",
+              "health": "/health"
+            }
+          }
+        },
+        "/earnings/upcoming": {
+          "path": "/earnings/upcoming",
+          "status": "success",
+          "response_time": 107.71,
+          "error": null
+        },
+        "/earnings/AAPL/monitor": {
+          "path": "/earnings/AAPL/monitor",
+          "status": "success",
+          "response_time": 89.13,
+          "error": null
+        },
+        "/earnings/calendar?start_date=2024-01-01&end_date=2024-01-31": {
+          "path": "/earnings/calendar?start_date=2024-01-01&end_date=2024-01-31",
+          "status": "success",
+          "response_time": 61.72,
+          "error": null
+        }
+      },
+      "error": null,
+      "health_data": {
+        "status": "healthy",
+        "service": "fundamentals-service",
+        "timestamp": "2025-09-20T04:51:21.963801"
+      }
+    },
+    "frontend": {
+      "service": "frontend",
+      "url": "http://localhost:3001",
+      "status": "unreachable",
+      "health_check": false,
+      "response_time": null,
+      "endpoints_tested": {},
+      "error": "Cannot connect to host localhost:3001 ssl:default [The remote computer refused the network connection]"
+    }
+  },
+  "databases": {
+    "postgres": {
+      "status": "failed",
+      "error": "No module named 'psycopg2'"
+    },
+    "redis": {
+      "status": "connected",
+      "version": "7.4.5",
+      "memory_used": "1012.32K",
+      "connected_clients": 1
+    }
+  },
+  "advanced_features": {
+    "timescaledb_optimization": {
+      "description": "TimescaleDB hypertables and optimization",
+      "status": "failed",
+      "error": "No module named 'psycopg2'"
+    },
+    "sentiment_monitoring": {
+      "description": "9-platform social sentiment monitoring",
+      "status": "operational",
+      "data": {
+        "total_platforms": 0,
+        "total_symbols": 0,
+        "healthy_platforms": 0,
+        "total_posts_collected": 0,
+        "total_errors": 0,
+        "platform_stats": {},
+        "last_updated": "2025-09-20T04:51:25.121290"
+      }
+    },
+    "fundamentals_parsing": {
+      "description": "SEC filing parsing and analysis",
+      "status": "operational"
+    },
+    "strategy_backtesting": {
+      "description": "Strategy backtesting engine",
+      "status": "unknown"
+    },
+    "prometheus_monitoring": {
+      "description": "Prometheus/Grafana monitoring",
+      "status": "unknown"
+    },
+    "earnings_monitoring": {
+      "description": "Quarterly/yearly earnings tracking",
+      "status": "operational"
+    }
+  },
+  "summary": {
+    "healthy_services": "4/5",
+    "connected_databases": "1/2",
+    "operational_features": "3/6"
+  }
+}

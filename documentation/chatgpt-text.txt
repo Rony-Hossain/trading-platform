@@ -1,0 +1,197 @@
+Timestamp: 2025-09-12
+
+Summary of actions performed by ChatGPT (Codex CLI):
+
+1) Repository understanding and mapping
+- Scanned documentation (README.md, SETUP.md, documentation/*) and code to understand structure, services, and workflows.
+
+2) Environment and orchestration updates
+- Added .env.example with frontend API URLs, provider keys, DB/Redis URLs, and service settings.
+- Added Dockerfile for services/market-data-service (FastAPI on port 8002) with curl for healthchecks.
+- Added Dockerfile for services/analysis-service (FastAPI on port 8003) with scientific build deps.
+- Updated docker-compose.yml to enable market-data-api and analysis-api with healthchecks and env wiring; set dependencies on postgres/redis.
+
+3) Notes
+- analysis-api image is heavy on first build due to ML libs; expect long build.
+- Frontend reads NEXT_PUBLIC_MARKET_DATA_API and NEXT_PUBLIC_ANALYSIS_API; defaults point to local ports.
+
+Ongoing practice
+- This file will be updated with a new Timestamped entry for each future change made by ChatGPT related to this project.
+
+Timestamp: 2025-09-12
+
+Additional actions:
+- Created documentation/project-features.txt with current feature inventory grouped by Database, Backend, Frontend.
+- Created documentation/improvement-ideas.txt capturing upgrade ideas and missing features (social sentiment, fundamentals, alert engine, auth, observability, etc.).
+- Created documentation/todo-text.txt listing timestamped TODOs for improvements and upcoming features with rationale and deliverables.
+
+Timestamp: 2025-09-12
+
+UI modernization (Material UI) work:
+- Added Material UI theme and provider: trading-frontend/apps/trading-web/theme.ts and wrapped app in ThemeProvider + CssBaseline (app/layout.tsx).
+- Created MaterialDashboard with MUI AppBar, Container/Grid, Card/List for watchlist, and MUI-based tab buttons: trading-frontend/apps/trading-web/components/material/MaterialDashboard.tsx.
+- Switched home page to use MaterialDashboard: trading-frontend/apps/trading-web/app/page.tsx.
+- Pending: install FE deps (@mui/material, @emotion/react, @emotion/styled). See instructions in summary.
+
+Timestamp: 2025-09-12
+
+Realtime charts enablement:
+- Implemented WebSocket-based realtime data in frontend: enhanced RealTimeData to open per-symbol WS to market-data-service `/ws/{symbol}` with polling fallback (trading-frontend/apps/trading-web/lib/api.ts).
+- Updated StockChart to subscribe to realtime ticks and append points live (trading-frontend/apps/trading-web/components/StockChart.tsx).
+
+Timestamp: 2025-09-12
+
+Service restart actions:
+- Docker: Attempted `docker compose up -d` to (re)start all services. Backend API images required a rebuild; `analysis-api` image build failed during apt-get due to environment constraints. Brought up core infra only: Postgres and Redis (`docker compose up -d postgres redis`).
+- Frontend: Launched dev server via detached process (`npm run dev`) in `trading-frontend`.
+- Next: Once network/build is available, start `market-data-api` and `analysis-api` with `docker compose up -d market-data-api analysis-api` or run services locally via uvicorn.
+
+Timestamp: 2025-09-12
+
+Realtime flicker reduction in charts:
+- Disabled series animations in Recharts and introduced a sticky Y-axis domain that only expands when new prices exceed bounds to avoid axis rescaling each tick.
+- File: trading-frontend/apps/trading-web/components/StockChart.tsx.
+
+Timestamp: 2025-09-12
+
+Additional flicker mitigation:
+- Buffered realtime ticks to apply at most once per second to the chart, reducing re-renders.
+- Memoized MaterialDashboard to avoid parent-level re-renders when children update.
+- Files: StockChart.tsx (tick buffer), components/material/MaterialDashboard.tsx (React.memo).
+
+Timestamp: 2025-09-12
+
+Bugfix: TechnicalIndicators prop mismatch and safety
+- Fixed MaterialDashboard to pass `data={historicalData}` instead of `historicalData`.
+- Added defensive check in TechnicalIndicators to handle undefined/empty data safely.
+- Files: components/material/MaterialDashboard.tsx, components/TechnicalIndicators.tsx.
+
+Timestamp: 2025-09-12
+
+Bugfix: Portfolio props and price API
+- Passed required props to Portfolio in MaterialDashboard (watchlist and handlers) to avoid undefined map errors.
+- Replaced non-existent `marketDataAPI.getCurrentPrice` with `marketDataAPI.getStockPrice` in Portfolio.
+- Files: components/material/MaterialDashboard.tsx, components/Portfolio.tsx.
+
+Timestamp: 2025-09-12
+
+Bugfix: UserProfile createdAt serialization
+- LocalStorage serialization made `createdAt` a string; calling toLocaleDateString crashed. Deserialized to Date in authAPI.getCurrentUser and added a safe conversion in UserProfile render.
+- Files: lib/authApi.ts, components/auth/UserProfile.tsx.
+
+Timestamp: 2025-09-12
+
+Added day trading guide document:
+- Created documentation/day-trading-guide.txt with comprehensive intraday and options trading guidance, risk management, setups, execution, and platform implementation notes.
+
+Timestamp: 2025-09-12
+
+Realtime alerts and option suggestions (frontend MVP):
+- Added lib/signals.ts to compute simple BUY/SELL/HOLD signals (EMA/RSI/VWAP) and map to option suggestions (call/put debit verticals) with target delta and DTE.
+- Added RealTimeAlerts component subscribing to WS ticks and emitting live alerts with option suggestions.
+- Integrated into MaterialDashboard under the Signals tab.
+- Files: apps/trading-web/lib/signals.ts, components/daytrading/RealTimeAlerts.tsx, components/material/MaterialDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Intraday API and daytrading dashboard scaffold:
+- DB: Added migrations/002_intraday_alerts.sql for candles_intraday and alert tables.
+- Backend: Added provider-level get_intraday for Yahoo/Finnhub; service method get_intraday_data; new FastAPI route /stocks/{symbol}/intraday and updated root endpoints.
+- Frontend: Added /daytrading route and DayTradingDashboard using live chart + RealTimeAlerts.
+- Files: services/market-data-service/app/{providers,services,main}.py, apps/trading-web/app/daytrading/page.tsx, components/daytrading/DayTradingDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Docs + main nav update:
+- Added documentation/daytrading-dashboard.txt describing the new dashboard, access, features, and roadmap.
+- Main dashboard now includes a Day Trading button in the tab bar that routes to /daytrading.
+
+Timestamp: 2025-09-12
+
+Dashboard layout fix:
+- Corrected TradingSignals props in MaterialDashboard overview to match component contract (watchlist + onSymbolSelect), preventing render errors that broke layout.
+- File: apps/trading-web/components/material/MaterialDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Sidebar layout adjustment:
+- Ensured Watchlist + Price panel stays on the side at typical widths by changing Grid breakpoints from lg-only to sm/md (left xs=12 sm=4 md=3, right xs=12 sm=8 md=9).
+- File: apps/trading-web/components/material/MaterialDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Day Trading as inline tab:
+- Replaced route button with a proper Day Trading tab (like Technical/Analysis) and render DayTradingDashboard inline when active.
+- File: apps/trading-web/components/material/MaterialDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Seamless layout + flicker mitigation:
+- CSS: stabilized page width using scrollbar-gutter and added a tabular-nums utility in globals.css to prevent width jitter on numeric updates.
+- StockPrice: applied tabular-nums to price/change/volume/time to avoid width jumps when digits change.
+- MaterialDashboard: made container scroll stable and sidebar sticky on md+ to reduce reflow.
+- StockChart: wrapped ResponsiveContainer in a fixed-size div to avoid transient height/width recalcs.
+- Files: app/globals.css, components/StockPrice.tsx, components/material/MaterialDashboard.tsx, components/StockChart.tsx.
+
+Timestamp: 2025-09-12
+
+Fixed Box dimensions for stability:
+- MaterialDashboard root Box now has fixed `height: 100vh` and full width; sidebar uses a fixed computed height (`calc(100vh - 80px)`) when sticky to prevent size changes.
+- DayTradingDashboard root Box also uses fixed height/width with stable scrolling.
+- Files: components/material/MaterialDashboard.tsx, components/daytrading/DayTradingDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Tabs under header, sidebar left:
+- Moved the tab bar (Paper with buttons) to be directly under the header and above the Grid layout so the content always renders below the header; left column keeps Watchlist then Price.
+- File: apps/trading-web/components/material/MaterialDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Fixed sidebar width (250px):
+- Set the left sidebar (Watchlist + Price) to a fixed width of 250px on md+ breakpoints using Grid flex-basis/maxWidth and a wrapper Box with width 250; right pane fills the remainder.
+- File: apps/trading-web/components/material/MaterialDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Chart period tabs:
+- Added five period tabs (Day, Week, Month, 6M, Year) above the price chart in both the main overview and the Day Trading dashboard.
+- Files: components/material/MaterialDashboard.tsx, components/daytrading/DayTradingDashboard.tsx.
+
+Timestamp: 2025-09-12
+
+Unified chart styling between Overview and Day Trading:
+- Removed extra Paper wrapper around StockChart in DayTradingDashboard and used the same outlined Paper just for the period tabs, matching Overview.
+- Aligned chart height to 400 to mirror StockChart defaults.
+- File: components/daytrading/DayTradingDashboard.tsx.
+Timestamp: 2025-09-27
+
+Phase 1 - Market Data Service updates
+- Added MacroFactorService, TimescaleDB persistence, periodic refresh, and macro endpoints to expose cross-asset factors (VIX, UST, FX, WTI).
+- Introduced macro configuration knobs, .env example settings, and new macro_factors migration for point-in-time storage.
+- Updated MarketDataService startup/background tasks and stats to include macro coverage and expose intraday data endpoint.
+
+Timestamp: 2025-09-27
+
+Phase 1 Tasks 1 & 2 completion notes
+- Market Data: options metrics history, unusual activity detection, and options flow endpoints now live; macro stats include cache TTL and history endpoints; new `/options/{symbol}/{metrics|history|unusual|flow}` routes added.
+- Fundamentals: new Timescale tables (`consensus_estimates`, `analyst_revisions`, `insider_transactions`, `institutional_holdings`, `ownership_flow_analysis`, `revision_momentum`) with matching ORM models and storage helpers.
+- Finnhub ingestion: earnings_monitor fetches and persists consensus estimates, analyst revisions, and insider transactions using the FinnhubFundamentalsClient; consensus quality reads stored data with fallback only when stale.
+- Ownership & revisions: institutional_ownership_parser and ownership_flow_analyzer persist Form 4/13F data and smart-money scores; enhanced_surprise_service consumes real consensus metrics when available.
+- Docs: Phase 1 fundamentals tasks marked complete in `documentation/todo-text.txt`.
+
+Timestamp: 2025-09-27
+
+Phase 1 Task 3 - Fetch Layer & Pipeline Augmentation
+- Extended services/analysis-service/app/core/data_pipeline.py with FactorClient.get_macro_history so analysis can pull stored macro factor history alongside snapshots.
+- Added _augment_with_external_features to join options history, macro factors, sentiment summaries, surprise metrics, analyst momentum, and ownership flow into the OHLCV frame with freshness flags and interaction features.
+- Synced helper builders to reshape each upstream payload into daily features (options stats, macro spreads, sentiment deltas, fundamentals) for RandomForest ingestion.
+
+
+Timestamp: 2025-09-27
+
+Event Data Service upgrade:
+- Replaced the in-memory scaffold with a Timescale-backed FastAPI app using async SQLAlchemy, REST CRUD, and health checks.
+- Added calendar/headline ingestors with configurable providers/env vars; events and headlines persist in TimescaleDB with dedupe + linking.
+- Documented provider requirements/rate limits (services/event-data-service/README.md), updated .env.example with calendar/headline credentials.
+

@@ -1,0 +1,27 @@
+Timestamp: 2025-09-12
+
+Day Trading Dashboard
+
+Overview
+- Purpose: fast, focused intraday workspace with a live chart and real-time buy/sell alerts (includes option side/strategy suggestions).
+- Access:
+  - Main dashboard: click the Day Trading button in the tab bar.
+  - Direct route: /daytrading
+
+Features
+- Live Chart: 1D chart with live price updates and stabilized axes to reduce flicker.
+- Real-time Alerts: BUY/SELL signals derived from EMA/RSI/VWAP heuristics, including option suggestions (e.g., CALL/PUT debit spreads, target delta, DTE).
+- Symbol Control: quick symbol input, auto-add to a local watchlist.
+
+Planned Enhancements
+- Intraday minute bars (1m) persistence and rolling window API (backend route added).
+- Live tape, quick order ticket (paper), and hotkeys.
+- Server-side alert worker with VWAP cross, ORB break, % change, volume spikes.
+- Options chain + greeks for contract selection and risk graphs.
+
+Files
+- Frontend route: apps/trading-web/app/daytrading/page.tsx
+- Dashboard: apps/trading-web/components/daytrading/DayTradingDashboard.tsx
+- Real-time alerts: apps/trading-web/components/daytrading/RealTimeAlerts.tsx
+- Signal logic: apps/trading-web/lib/signals.ts
+
