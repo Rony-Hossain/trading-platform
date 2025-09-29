@@ -1021,7 +1021,33 @@ High-End Upgrade TODOs **ENHANCED WITH INSTITUTIONAL-GRADE REQUIREMENTS**
   - ✅ /topics/{symbol}/history endpoint
   - ✅ Full integration with the sentiment service
   - ✅ Production-ready implementation running on port 8004
-- [ ] Add novelty scores and source credibility weights to sentiment aggregates to avoid double-counting replicated news.
+- [x] Add novelty scores and source credibility weights to sentiment aggregates to avoid double-counting replicated news.
+   1. 📊 Novelty Scoring System (services/sentiment-service/app/services/novelty_scoring.py):
+    - Text similarity detection using SequenceMatcher
+    - Content normalization and hashing (MD5)
+    - Time-window based duplicate detection
+    - Risk level classification (none, low_similarity, moderate_similarity, high_similarity, exact_duplicate)
+  2. 🏆 Source Credibility Weighting (services/sentiment-service/app/services/novelty_scoring.py):
+    - Tiered source reliability scores (Reuters: 1.0, Bloomberg: 1.0, Twitter: 0.6, etc.)
+    - Author credibility based on verification status and engagement
+    - Engagement-based weighting for social media posts
+    - Dynamic credibility adjustment capabilities
+  3. 🧮 Quality-Weighted Sentiment Aggregation (services/sentiment-service/app/services/novelty_scoring.py):
+    - Combined scoring: effective_weight = novelty_score × source_weight × author_weight × engagement_weight
+    - Traditional vs. weighted sentiment metrics comparison
+    - Quality distribution tracking and duplicate counting
+    - Comprehensive quality scoring algorithms
+  4. 💾 Enhanced Database Schema:
+    - Added columns to sentiment_posts and sentiment_news: novelty_score, source_credibility_weight, author_credibility_weight, engagement_weight, duplicate_risk, content_hash
+    - Added columns to sentiment_aggregates: weighted_avg_sentiment, total_effective_weight, quality_score, novelty_distribution, credibility_distribution, duplicate_count
+    - Created new tables: content_deduplication and source_credibility
+  5. 🚀 New API Endpoints (services/sentiment-service/app/main_working.py):
+    - /weighted-sentiment/{symbol}: Get quality-weighted sentiment analysis
+    - /quality/duplicates and /quality/source-credibility: Monitor data quality metrics
+  6. 🔗 Integration with Existing Services (services/sentiment-service/app/services/sentiment_storage.py):
+    - Updated store_social_post() and store_news_article() methods to calculate and store quality metrics
+    - Enhanced compute_aggregates() method to use weighted sentiment calculations
+    - Seamless integration with existing sentiment analysis pipeline
 
 ### Infrastructure: MLOps & Production Readiness ⚙️
 - [ ] **Define Model Deployment and Canary Testing**: Integrate MLflow with shadow/canary deployment pipeline.

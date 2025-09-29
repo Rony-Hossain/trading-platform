@@ -11,6 +11,7 @@ from sqlalchemy import and_, or_, func, desc, asc
 import asyncio
 
 from ..core.database import SentimentPost, NewsArticle, SentimentAggregates, CollectionStatus
+from ..models.database_models import ContentDeduplication, SourceCredibility
 from ..models.schemas import SocialPost, NewsArticle as NewsArticleSchema, SentimentCreate
 from ..services.sentiment_analyzer import SentimentAnalyzer
 from ..services.novelty_scoring import NoveltyScorer, SourceCredibilityWeights, WeightedSentimentAggregator
