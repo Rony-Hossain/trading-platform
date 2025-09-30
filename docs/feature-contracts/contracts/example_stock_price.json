@@ -1,0 +1,37 @@
+{
+  "feature_id": "aapl_close_price_1min",
+  "feature_name": "Apple Inc. 1-Minute Close Price",
+  "data_source": "bloomberg_api",
+  "feature_type": "price",
+  "granularity": "1min",
+  "currency": "USD",
+  "unit": "dollars",
+  
+  "as_of_ts": "2024-01-15T09:30:00.000Z",
+  "effective_ts": "2024-01-15T09:35:00.000Z",
+  "arrival_latency": 300,
+  
+  "point_in_time_rule": "strict",
+  "vendor_SLA": {
+    "availability_pct": 99.9,
+    "max_latency_seconds": 300,
+    "update_frequency": "1min",
+    "backfill_policy": "24h_window",
+    "quality_guarantee": "99.95%"
+  },
+  "revision_policy": {
+    "allows_revisions": false,
+    "revision_window_hours": 0,
+    "revision_notification": "none",
+    "backfill_on_revision": false,
+    "version_tracking": true
+  },
+  
+  "contract_version": "1.0.0",
+  "created_by": "quant.team@company.com",
+  "approved_by": "risk.manager@company.com",
+  "approval_date": "2024-01-15T14:30:00.000Z",
+  
+  "tags": ["equity", "price", "real_time", "core", "aapl"],
+  "dependencies": []
+}

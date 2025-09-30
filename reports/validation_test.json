@@ -1,0 +1,28 @@
+{
+  "validation_timestamp": "2025-09-30T13:06:13.343799+00:00",
+  "contracts_directory": "docs/feature-contracts",
+  "summary": {
+    "total_contracts": 3,
+    "valid_contracts": 1,
+    "invalid_contracts": 2,
+    "success_rate": 33.33333333333333
+  },
+  "errors": [
+    "docs\\feature-contracts\\earnings_per_share_first_print.yml: Schema validation errors:",
+    "  $: 'created_at' is a required property",
+    "  $: 'approved_at' is a required property",
+    "  $.as_of_ts_rule: 'T+45 days 00:00 ET' is not one of ['market_close_plus_1d', 'next_day', 'filing_date', 'custom']",
+    "  $.effective_ts_rule: 'report_date 23:59 ET' is not one of ['report_period_end', 'filing_date', 'announcement_date']",
+    "  $.arrival_latency_minutes: 64800 is greater than the maximum of 10080",
+    "docs\\feature-contracts\\vix_close.yml: Schema validation errors:",
+    "  $: 'created_at' is a required property",
+    "  $: 'approved_at' is a required property",
+    "  $.as_of_ts_rule: 'T+1 09:30 ET' is not one of ['announcement_time', 'release_time', 'market_close']",
+    "  $.effective_ts_rule: 'T 16:00 ET' is not one of ['effective_date', 'announcement_time', 'publication_time']",
+    "  $.retention_policy: '7_years' is not one of ['10_years', 'permanent']"
+  ],
+  "warnings": [],
+  "feature_registry": [
+    "rsi_14_daily"
+  ]
+}

@@ -1,347 +1,419 @@
 """
-Feature Contracts - Point-in-Time (PIT) Enforcement System
+Feature Contracts and PIT Enforcement System
 
-This module provides comprehensive PIT contract validation and enforcement
-for all features used in the trading platform. Ensures data lineage integrity
-and prevents look-ahead bias in model training and production.
+This module implements comprehensive Point-in-Time (PIT) compliance validation 
+for all features used in the trading platform to prevent data leakage.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from enum import Enum
-from typing import Dict, List, Optional, Any, Union
-import yaml
 import json
 import os
-import logging
-from pathlib import Path
 import re
+from datetime import datetime, timezone
+from enum import Enum
+from typing import Dict, List, Optional, Any, Union
+from dataclasses import dataclass
+from pathlib import Path
 
-logger = logging.getLogger(__name__)
+import jsonschema
+from pydantic import BaseModel, Field, validator
+from pydantic.types import StrictStr, StrictFloat, StrictInt
 
-class FeatureType(Enum):
-    """Feature categorization"""
-    TECHNICAL = "technical"
-    FUNDAMENTAL = "fundamental" 
-    SENTIMENT = "sentiment"
-    MACRO = "macro"
-    OPTIONS = "options"
-    DERIVED = "derived"
-    EVENT = "event"
 
-class PIIClassification(Enum):
-    """Personal information classification"""
-    NONE = "none"
-    MASKED = "masked"
-    ANONYMIZED = "anonymized"
-    SENSITIVE = "sensitive"
-
-class ValidationSeverity(Enum):
-    """Contract violation severity levels"""
+class ViolationType(Enum):
+    """Types of PIT compliance violations"""
     CRITICAL = "critical"
     HIGH = "high"
     MEDIUM = "medium"
     LOW = "low"
-    INFO = "info"
+
+
+class PITRuleType(Enum):
+    """PIT rule enforcement levels"""
+    STRICT = "strict"
+    RELAXED = "relaxed"
+    CUSTOM = "custom"
+
 
 @dataclass
-class VendorSLA:
-    """Data vendor service level agreement"""
-    availability: float = 99.9  # Uptime percentage
-    latency_minutes: int = 15   # Maximum delivery delay
-    quality: float = 99.5       # Accuracy/completeness percentage
+class PITViolation:
+    """Represents a Point-in-Time compliance violation"""
+    violation_type: ViolationType
+    feature_id: str
+    description: str
+    timestamp: datetime
+    remediation_required: bool = True
+    
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "violation_type": self.violation_type.value,
+            "feature_id": self.feature_id,
+            "description": self.description,
+            "timestamp": self.timestamp.isoformat(),
+            "remediation_required": self.remediation_required
+        }
 
-@dataclass
-class RevisionPolicy:
+
+class VendorSLA(BaseModel):
+    """Vendor Service Level Agreement specifications"""
+    availability_pct: StrictFloat = Field(..., ge=0.0, le=100.0)
+    max_latency_seconds: StrictInt = Field(..., ge=0)
+    update_frequency: StrictStr
+    backfill_policy: StrictStr
+    quality_guarantee: StrictStr
+    
+    @validator('availability_pct')
+    def validate_availability(cls, v):
+        if not 0.0 <= v <= 100.0:
+            raise ValueError('Availability must be between 0.0 and 100.0')
+        return v
+
+
+class RevisionPolicy(BaseModel):
     """Data revision and correction policy"""
-    revision_frequency: str = "never"  # never, daily, weekly, monthly
-    revision_window_days: int = 0      # How far back revisions occur
-    notification_method: str = "none"  # none, email, webhook, alert
+    allows_revisions: bool
+    revision_window_hours: StrictInt = Field(..., ge=0)
+    revision_notification: StrictStr
+    backfill_on_revision: bool
+    version_tracking: bool
 
-@dataclass
-class ValidationRules:
-    """Feature validation and monitoring rules"""
-    valid_range: Optional[tuple] = None          # (min, max) values
-    null_handling: str = "reject"               # reject, forward_fill, interpolate
-    outlier_detection: str = "3_sigma"          # Method for anomaly detection
-    monitoring_alerts: List[str] = field(default_factory=list)
 
-@dataclass
-class FeatureContract:
+class FeatureContract(BaseModel):
     """Complete feature contract specification"""
-    # Identification
-    feature_name: str
-    feature_type: FeatureType
-    data_source: str
-    version: str
     
-    # Point-in-Time Constraints  
-    as_of_ts_rule: str           # When feature becomes available
-    effective_ts_rule: str       # When underlying event occurred
-    arrival_latency_minutes: int # Expected delay
-    point_in_time_rule: str      # Specific PIT constraints
+    # Core identification
+    feature_id: StrictStr = Field(..., pattern=r"^[a-z][a-z0-9_]*[a-z0-9]$")
+    feature_name: StrictStr
+    data_source: StrictStr
+    feature_type: StrictStr
+    granularity: StrictStr
     
-    # Data Quality & SLA
-    vendor_sla: VendorSLA
+    # Temporal constraints
+    as_of_ts: StrictStr  # ISO 8601 timestamp
+    effective_ts: StrictStr  # ISO 8601 timestamp  
+    arrival_latency: StrictInt = Field(..., ge=0)  # seconds
+    
+    # PIT rules and quality
+    point_in_time_rule: PITRuleType
+    vendor_SLA: VendorSLA
     revision_policy: RevisionPolicy
     
-    # Business Logic
-    computation_logic: str
-    dependencies: List[str] = field(default_factory=list)
-    lookback_period_days: int = 30
-    update_frequency: str = "daily"
-    
-    # Validation & Monitoring
-    validation_rules: ValidationRules = field(default_factory=ValidationRules)
-    
-    # Compliance & Audit
-    pii_classification: PIIClassification = PIIClassification.NONE
-    regulatory_notes: str = ""
-    audit_trail: str = "git_commits"
-    retention_policy: str = "7_years"
-    
     # Metadata
-    created_by: str = ""
-    created_at: Optional[datetime] = None
-    approved_by: str = ""
-    approved_at: Optional[datetime] = None
-    last_modified: Optional[datetime] = None
+    contract_version: StrictStr = Field(..., pattern=r"^\d+\.\d+\.\d+$")
+    created_by: StrictStr
+    approved_by: Optional[StrictStr] = None
+    approval_date: Optional[StrictStr] = None
+    
+    # Optional fields
+    currency: Optional[StrictStr] = None
+    unit: Optional[StrictStr] = None
+    additional_rules: Optional[Dict[str, Any]] = None
+    dependencies: Optional[List[StrictStr]] = None
+    tags: Optional[List[StrictStr]] = None
+    
+    # System generated
+    pit_audit_status: Optional[StrictStr] = None
+    last_audit_ts: Optional[StrictStr] = None
+    
+    @validator('feature_type')
+    def validate_feature_type(cls, v):
+        allowed_types = ["price", "volume", "sentiment", "fundamental", "technical", "macro", "derived"]
+        if v not in allowed_types:
+            raise ValueError(f'Feature type must be one of: {allowed_types}')
+        return v
+    
+    @validator('as_of_ts', 'effective_ts', 'approval_date', 'last_audit_ts')
+    def validate_timestamps(cls, v):
+        if v is None:
+            return v
+        try:
+            datetime.fromisoformat(v.replace('Z', '+00:00'))
+        except ValueError:
+            raise ValueError('Timestamp must be valid ISO 8601 format')
+        return v
+    
+    def validate_temporal_consistency(self) -> List[str]:
+        """Validate temporal consistency rules"""
+        violations = []
+        
+        try:
+            as_of_dt = datetime.fromisoformat(self.as_of_ts.replace('Z', '+00:00'))
+            effective_dt = datetime.fromisoformat(self.effective_ts.replace('Z', '+00:00'))
+            
+            # Rule 1: as_of_ts <= effective_ts
+            if as_of_dt > effective_dt:
+                violations.append("as_of_ts must be <= effective_ts")
+            
+            # Rule 2: effective_ts >= as_of_ts + arrival_latency
+            expected_effective_dt = as_of_dt.timestamp() + self.arrival_latency
+            if effective_dt.timestamp() < expected_effective_dt:
+                violations.append("effective_ts must be >= as_of_ts + arrival_latency")
+                
+        except Exception as e:
+            violations.append(f"Timestamp parsing error: {str(e)}")
+            
+        return violations
 
-    def __post_init__(self):
-        """Validate contract after initialization"""
-        if self.created_at is None:
-            self.created_at = datetime.utcnow()
-        if self.last_modified is None:
-            self.last_modified = datetime.utcnow()
 
-@dataclass
-class ContractViolation:
-    """Represents a contract validation violation"""
-    feature_name: str
-    violation_type: str
-    severity: ValidationSeverity
-    message: str
-    actual_value: Any = None
-    expected_value: Any = None
-    timestamp: datetime = field(default_factory=datetime.utcnow)
+class PitComplianceError(Exception):
+    """Exception raised for PIT compliance violations"""
+    def __init__(self, violations: List[PITViolation]):
+        self.violations = violations
+        super().__init__(f"PIT compliance violations: {[v.description for v in violations]}")
+
 
 class FeatureContractValidator:
-    """Validates feature contracts and enforces PIT constraints"""
+    """Main validator for feature contracts and PIT compliance"""
     
-    def __init__(self, contracts_dir: str = "docs/feature-contracts"):
-        self.contracts_dir = Path(contracts_dir)
+    def __init__(self, enforce_pit_compliance: bool = None):
         self.contracts: Dict[str, FeatureContract] = {}
-        self.load_contracts()
+        self.violations: List[PITViolation] = []
         
-    def load_contracts(self) -> None:
-        """Load all feature contracts from directory"""
-        if not self.contracts_dir.exists():
-            logger.warning(f"Contracts directory not found: {self.contracts_dir}")
-            return
-            
-        pattern = self.contracts_dir / "*.yml"
-        contract_files = list(self.contracts_dir.glob("*.yml")) + list(self.contracts_dir.glob("*.yaml"))
-        
-        for contract_file in contract_files:
-            try:
-                with open(contract_file, 'r') as f:
-                    contract_data = yaml.safe_load(f)
-                    
-                contract = self._parse_contract(contract_data)
-                self.contracts[contract.feature_name] = contract
-                logger.info(f"Loaded contract for feature: {contract.feature_name}")
-                
-            except Exception as e:
-                logger.error(f"Failed to load contract {contract_file}: {e}")
-    
-    def _parse_contract(self, data: Dict) -> FeatureContract:
-        """Parse contract data into FeatureContract object"""
-        # Parse nested objects
-        vendor_sla = VendorSLA(**data.get('vendor_sla', {}))
-        revision_policy = RevisionPolicy(**data.get('revision_policy', {}))
-        validation_rules = ValidationRules(**data.get('validation_rules', {}))
-        
-        # Convert string enums
-        feature_type = FeatureType(data['feature_type'])
-        pii_classification = PIIClassification(data.get('pii_classification', 'none'))
-        
-        return FeatureContract(
-            feature_name=data['feature_name'],
-            feature_type=feature_type,
-            data_source=data['data_source'],
-            version=data['version'],
-            as_of_ts_rule=data['as_of_ts_rule'],
-            effective_ts_rule=data['effective_ts_rule'],
-            arrival_latency_minutes=data['arrival_latency_minutes'],
-            point_in_time_rule=data['point_in_time_rule'],
-            vendor_sla=vendor_sla,
-            revision_policy=revision_policy,
-            computation_logic=data['computation_logic'],
-            dependencies=data.get('dependencies', []),
-            lookback_period_days=data.get('lookback_period_days', 30),
-            update_frequency=data.get('update_frequency', 'daily'),
-            validation_rules=validation_rules,
-            pii_classification=pii_classification,
-            regulatory_notes=data.get('regulatory_notes', ''),
-            audit_trail=data.get('audit_trail', 'git_commits'),
-            retention_policy=data.get('retention_policy', '7_years'),
-            created_by=data.get('created_by', ''),
-            approved_by=data.get('approved_by', ''),
+        # Check environment variable for enforcement
+        env_enforce = os.getenv('PIT_CONTRACTS_ENFORCE', 'false').lower()
+        self.enforce_pit_compliance = (
+            enforce_pit_compliance if enforce_pit_compliance is not None 
+            else env_enforce in ('true', '1', 'yes', 'on')
         )
+        
+        self._load_schema()
     
-    def validate_feature_usage(self, feature_name: str, usage_timestamp: datetime, 
-                             data_timestamp: datetime) -> List[ContractViolation]:
-        """Validate that feature usage complies with PIT contract"""
+    def _load_schema(self):
+        """Load JSON schema for contract validation"""
+        self.contract_schema = {
+            "type": "object",
+            "required": [
+                "feature_id", "feature_name", "data_source", "feature_type",
+                "granularity", "as_of_ts", "effective_ts", "arrival_latency",
+                "point_in_time_rule", "vendor_SLA", "revision_policy",
+                "contract_version", "created_by"
+            ],
+            "properties": {
+                "feature_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*[a-z0-9]$"},
+                "feature_name": {"type": "string"},
+                "data_source": {"type": "string"},
+                "feature_type": {"type": "string", "enum": [
+                    "price", "volume", "sentiment", "fundamental", "technical", "macro", "derived"
+                ]},
+                "granularity": {"type": "string"},
+                "as_of_ts": {"type": "string"},
+                "effective_ts": {"type": "string"},
+                "arrival_latency": {"type": "integer", "minimum": 0},
+                "point_in_time_rule": {"type": "string", "enum": ["strict", "relaxed", "custom"]},
+                "contract_version": {"type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$"},
+                "created_by": {"type": "string"}
+            }
+        }
+    
+    def register_contract(self, contract_data: Dict[str, Any]) -> bool:
+        """Register a new feature contract"""
+        try:
+            # Validate against JSON schema
+            jsonschema.validate(contract_data, self.contract_schema)
+            
+            # Create contract object with Pydantic validation
+            contract = FeatureContract(**contract_data)
+            
+            # Validate temporal consistency
+            temporal_violations = contract.validate_temporal_consistency()
+            if temporal_violations:
+                raise ValueError(f"Temporal consistency violations: {temporal_violations}")
+            
+            # Store contract
+            self.contracts[contract.feature_id] = contract
+            
+            # Update audit status
+            contract.pit_audit_status = "compliant"
+            contract.last_audit_ts = datetime.now(timezone.utc).isoformat()
+            
+            return True
+            
+        except Exception as e:
+            if self.enforce_pit_compliance:
+                raise PitComplianceError([
+                    PITViolation(
+                        violation_type=ViolationType.CRITICAL,
+                        feature_id=contract_data.get('feature_id', 'unknown'),
+                        description=f"Contract registration failed: {str(e)}",
+                        timestamp=datetime.now(timezone.utc)
+                    )
+                ])
+            return False
+    
+    def get_contract(self, feature_id: str) -> Optional[FeatureContract]:
+        """Retrieve contract for a feature"""
+        return self.contracts.get(feature_id)
+    
+    def check_pit_compliance(self, feature_id: str, feature_data: Dict[str, Any]) -> List[PITViolation]:
+        """Check PIT compliance for feature usage"""
         violations = []
         
-        if feature_name not in self.contracts:
-            violations.append(ContractViolation(
-                feature_name=feature_name,
-                violation_type="missing_contract",
-                severity=ValidationSeverity.CRITICAL,
-                message=f"No contract found for feature: {feature_name}"
+        # Check if contract exists
+        contract = self.get_contract(feature_id)
+        if not contract:
+            violations.append(PITViolation(
+                violation_type=ViolationType.CRITICAL,
+                feature_id=feature_id,
+                description=f"No contract found for feature: {feature_id}",
+                timestamp=datetime.now(timezone.utc)
             ))
             return violations
+        
+        # Extract timestamps from feature data
+        as_of_timestamp = feature_data.get('as_of_timestamp')
+        effective_timestamp = feature_data.get('effective_timestamp')
+        prediction_timestamp = feature_data.get('prediction_timestamp')
+        
+        if not all([as_of_timestamp, effective_timestamp]):
+            violations.append(PITViolation(
+                violation_type=ViolationType.HIGH,
+                feature_id=feature_id,
+                description="Missing required timestamps in feature data",
+                timestamp=datetime.now(timezone.utc)
+            ))
+            return violations
+        
+        try:
+            # Parse timestamps
+            as_of_dt = datetime.fromisoformat(as_of_timestamp.replace('Z', '+00:00'))
+            effective_dt = datetime.fromisoformat(effective_timestamp.replace('Z', '+00:00'))
             
-        contract = self.contracts[feature_name]
-        
-        # Check arrival latency compliance
-        min_delay = timedelta(minutes=contract.arrival_latency_minutes)
-        actual_delay = usage_timestamp - data_timestamp
-        
-        if actual_delay < min_delay:
-            violations.append(ContractViolation(
-                feature_name=feature_name,
-                violation_type="insufficient_latency",
-                severity=ValidationSeverity.HIGH,
-                message=f"Feature used too soon after data timestamp. "
-                       f"Required delay: {min_delay}, Actual: {actual_delay}",
-                expected_value=min_delay,
-                actual_value=actual_delay
+            if prediction_timestamp:
+                pred_dt = datetime.fromisoformat(prediction_timestamp.replace('Z', '+00:00'))
+                
+                # Critical PIT rule: as_of_ts <= prediction_timestamp
+                if as_of_dt > pred_dt:
+                    violations.append(PITViolation(
+                        violation_type=ViolationType.CRITICAL,
+                        feature_id=feature_id,
+                        description=f"Future data access: as_of_ts ({as_of_timestamp}) > prediction_ts ({prediction_timestamp})",
+                        timestamp=datetime.now(timezone.utc)
+                    ))
+                
+                # Check effective timestamp availability
+                if effective_dt > pred_dt:
+                    violations.append(PITViolation(
+                        violation_type=ViolationType.HIGH,
+                        feature_id=feature_id,
+                        description=f"Feature not yet available: effective_ts ({effective_timestamp}) > prediction_ts ({prediction_timestamp})",
+                        timestamp=datetime.now(timezone.utc)
+                    ))
+            
+            # Validate arrival latency modeling
+            expected_effective_ts = as_of_dt.timestamp() + contract.arrival_latency
+            if effective_dt.timestamp() < expected_effective_ts:
+                violations.append(PITViolation(
+                    violation_type=ViolationType.MEDIUM,
+                    feature_id=feature_id,
+                    description=f"Arrival latency violation: feature available before expected time",
+                    timestamp=datetime.now(timezone.utc)
+                ))
+                
+        except Exception as e:
+            violations.append(PITViolation(
+                violation_type=ViolationType.HIGH,
+                feature_id=feature_id,
+                description=f"Timestamp validation error: {str(e)}",
+                timestamp=datetime.now(timezone.utc)
             ))
         
-        # Check dependencies
-        for dep in contract.dependencies:
-            if dep not in self.contracts:
-                violations.append(ContractViolation(
-                    feature_name=feature_name,
-                    violation_type="missing_dependency_contract",
-                    severity=ValidationSeverity.MEDIUM,
-                    message=f"Dependency {dep} lacks contract"
-                ))
+        # Store violations
+        self.violations.extend(violations)
+        
+        # Update contract audit status
+        if violations:
+            severity_levels = [v.violation_type for v in violations]
+            if ViolationType.CRITICAL in severity_levels:
+                contract.pit_audit_status = "violation"
+            elif ViolationType.HIGH in severity_levels:
+                contract.pit_audit_status = "warning"
         
         return violations
     
-    def validate_feature_value(self, feature_name: str, value: Any) -> List[ContractViolation]:
-        """Validate feature value against contract rules"""
-        violations = []
+    def audit_feature_set(self, features: Dict[str, Any], 
+                         prediction_timestamp: str = None) -> List[PITViolation]:
+        """Audit a complete set of features for PIT compliance"""
+        all_violations = []
         
-        if feature_name not in self.contracts:
-            return violations  # Already handled in usage validation
-            
-        contract = self.contracts[feature_name]
-        rules = contract.validation_rules
+        for feature_id, feature_data in features.items():
+            if prediction_timestamp:
+                feature_data['prediction_timestamp'] = prediction_timestamp
+                
+            violations = self.check_pit_compliance(feature_id, feature_data)
+            all_violations.extend(violations)
         
-        # Check valid range
-        if rules.valid_range and value is not None:
-            min_val, max_val = rules.valid_range
-            if not (min_val <= value <= max_val):
-                violations.append(ContractViolation(
-                    feature_name=feature_name,
-                    violation_type="value_out_of_range",
-                    severity=ValidationSeverity.MEDIUM,
-                    message=f"Value {value} outside valid range [{min_val}, {max_val}]",
-                    expected_value=rules.valid_range,
-                    actual_value=value
-                ))
-        
-        # Check null handling
-        if value is None and rules.null_handling == "reject":
-            violations.append(ContractViolation(
-                feature_name=feature_name,
-                violation_type="null_value_rejected",
-                severity=ValidationSeverity.MEDIUM,
-                message="Null value not allowed per contract rules"
-            ))
-            
-        return violations
+        return all_violations
     
-    def get_missing_contracts(self, feature_list: List[str]) -> List[str]:
-        """Return list of features without contracts"""
-        return [f for f in feature_list if f not in self.contracts]
-    
-    def generate_audit_report(self) -> Dict[str, Any]:
-        """Generate comprehensive audit report"""
-        report = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "total_contracts": len(self.contracts),
-            "contracts_by_type": {},
-            "contracts_by_source": {},
-            "compliance_summary": {
-                "features_with_contracts": len(self.contracts),
-                "features_missing_contracts": 0,  # Set by caller
-                "total_violations_last_24h": 0,   # Set by monitoring
-            },
-            "contracts": []
+    def get_compliance_report(self) -> Dict[str, Any]:
+        """Generate comprehensive compliance report"""
+        total_contracts = len(self.contracts)
+        compliant_contracts = sum(1 for c in self.contracts.values() 
+                                if c.pit_audit_status == "compliant")
+        
+        violation_counts = {}
+        for violation_type in ViolationType:
+            violation_counts[violation_type.value] = sum(
+                1 for v in self.violations if v.violation_type == violation_type
+            )
+        
+        return {
+            "total_contracts": total_contracts,
+            "compliant_contracts": compliant_contracts,
+            "compliance_rate": compliant_contracts / total_contracts if total_contracts > 0 else 0.0,
+            "total_violations": len(self.violations),
+            "violation_breakdown": violation_counts,
+            "enforcement_enabled": self.enforce_pit_compliance,
+            "last_audit_time": datetime.now(timezone.utc).isoformat()
         }
-        
-        # Group by type and source
-        for contract in self.contracts.values():
-            type_key = contract.feature_type.value
-            source_key = contract.data_source
-            
-            report["contracts_by_type"][type_key] = report["contracts_by_type"].get(type_key, 0) + 1
-            report["contracts_by_source"][source_key] = report["contracts_by_source"].get(source_key, 0) + 1
-            
-            # Add contract summary
-            report["contracts"].append({
-                "feature_name": contract.feature_name,
-                "feature_type": contract.feature_type.value,
-                "data_source": contract.data_source,
-                "version": contract.version,
-                "arrival_latency_minutes": contract.arrival_latency_minutes,
-                "update_frequency": contract.update_frequency,
-                "pii_classification": contract.pii_classification.value,
-                "created_by": contract.created_by,
-                "approved_by": contract.approved_by,
-                "last_modified": contract.last_modified.isoformat() if contract.last_modified else None
-            })
-        
-        return report
     
-    def enforce_pit_compliance(self, feature_name: str, as_of_ts: datetime) -> bool:
-        """Enforce PIT compliance for feature access"""
-        if feature_name not in self.contracts:
-            logger.error(f"PIT enforcement failed: No contract for {feature_name}")
+    def load_contracts_from_directory(self, contracts_dir: str) -> int:
+        """Load all contracts from a directory"""
+        contracts_loaded = 0
+        contracts_path = Path(contracts_dir)
+        
+        if not contracts_path.exists():
+            return 0
+            
+        for contract_file in contracts_path.glob("*.json"):
+            try:
+                with open(contract_file, 'r') as f:
+                    contract_data = json.load(f)
+                    
+                if self.register_contract(contract_data):
+                    contracts_loaded += 1
+                    
+            except Exception as e:
+                print(f"Failed to load contract from {contract_file}: {str(e)}")
+                
+        return contracts_loaded
+    
+    def save_contract(self, feature_id: str, contracts_dir: str) -> bool:
+        """Save a contract to file"""
+        contract = self.get_contract(feature_id)
+        if not contract:
             return False
             
-        contract = self.contracts[feature_name]
+        contracts_path = Path(contracts_dir)
+        contracts_path.mkdir(parents=True, exist_ok=True)
         
-        # Parse PIT rule (simplified - extend based on your rules)
-        if "market_open" in contract.point_in_time_rule.lower():
-            # Example: Feature available at market open next day
-            market_open = as_of_ts.replace(hour=9, minute=30, second=0, microsecond=0)
-            if as_of_ts < market_open:
-                logger.warning(f"PIT violation: {feature_name} not available until {market_open}")
-                return False
-                
-        return True
+        contract_file = contracts_path / f"{feature_id}.json"
+        
+        try:
+            with open(contract_file, 'w') as f:
+                json.dump(contract.dict(), f, indent=2)
+            return True
+        except Exception:
+            return False
 
-def validate_contracts_directory(contracts_dir: str) -> Dict[str, Any]:
-    """Validate all contracts in directory and return summary"""
-    validator = FeatureContractValidator(contracts_dir)
-    
-    summary = {
-        "total_contracts": len(validator.contracts),
-        "validation_errors": [],
-        "contracts_loaded": list(validator.contracts.keys()),
-        "missing_required_fields": [],
-        "invalid_enums": []
-    }
-    
-    # Additional validation logic can be added here
-    
-    return summary
 
-# Environment variable for enabling enforcement
-PIT_CONTRACTS_ENFORCE = os.getenv("PIT_CONTRACTS_ENFORCE", "false").lower() == "true"
+def get_validator() -> FeatureContractValidator:
+    """Get the global feature contract validator instance"""
+    global _global_validator
+    if '_global_validator' not in globals():
+        _global_validator = FeatureContractValidator()
+    return _global_validator
+
+
+def enforce_pit_compliance() -> bool:
+    """Check if PIT compliance enforcement is enabled"""
+    return get_validator().enforce_pit_compliance
+

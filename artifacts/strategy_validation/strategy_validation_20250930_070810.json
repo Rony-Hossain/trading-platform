@@ -1,0 +1,70 @@
+{
+  "metadata": {
+    "validation_date": "2025-09-30T07:08:10.747878",
+    "strategies": [
+      "SPY_MOMENTUM"
+    ],
+    "benchmark": "SP500",
+    "start_date": "2023-10-01",
+    "end_date": "2025-09-30",
+    "bootstrap_iterations": 50,
+    "significance_level": 0.05,
+    "sample_size": 522
+  },
+  "strategy_performance": {
+    "benchmark": {
+      "name": "SP500",
+      "sharpe_ratio": 1.483589454281353,
+      "annualized_return": 0.37036292154768036,
+      "annualized_volatility": 0.24963976420760095,
+      "max_drawdown": -0.24413447718434314
+    },
+    "strategies": [
+      {
+        "name": "SPY_MOMENTUM",
+        "sharpe_ratio": 0.7773424381246691,
+        "information_ratio": null,
+        "annualized_return": 0.21694270461732945,
+        "annualized_volatility": 0.27908254326201665,
+        "max_drawdown": -0.24523584764979764,
+        "excess_return": -0.15342021693035096,
+        "tracking_error": 0.3758675517709922,
+        "win_rate": 0.5268199233716475,
+        "best_day": 0.0706789812670705,
+        "worst_day": -0.057594202325615886
+      }
+    ]
+  },
+  "statistical_tests": {
+    "reality_check": {
+      "test_type": "reality_check",
+      "test_statistic": -0.706247016156684,
+      "p_value": 0.5,
+      "critical_value_95": 0.832490437191324,
+      "critical_value_99": 1.2900199611755383,
+      "is_significant_95": false,
+      "is_significant_99": false,
+      "bootstrap_iterations": 50,
+      "strategy_name": "SPY_MOMENTUM",
+      "benchmark_name": "SP500",
+      "sample_size": 522
+    }
+  },
+  "conclusions": {
+    "overall_assessment": "NO_EVIDENCE",
+    "significant_strategies": [],
+    "recommended_actions": [
+      "No statistically significant outperformance detected",
+      "Consider alternative strategies or longer evaluation periods",
+      "Avoid deploying strategies that may be result of data mining"
+    ],
+    "risk_warnings": [],
+    "statistical_summary": {
+      "n_strategies_tested": 1,
+      "best_strategy_name": "SPY_MOMENTUM",
+      "best_strategy_sharpe": 0.7773424381246691,
+      "bootstrap_iterations": 50,
+      "family_wise_error_controlled": false
+    }
+  }
+}

@@ -1,0 +1,91 @@
+# Sample RSI Feature Contract for Testing
+# Based on technical_feature_template.yml
+
+# REQUIRED: Basic Identification
+feature_name: "rsi_14_daily"
+feature_type: "technical"
+data_source: "market_data_service"
+version: "1.0.0"
+
+# REQUIRED: Point-in-Time Constraints
+as_of_ts_rule: "market_close"
+effective_ts_rule: "trade_timestamp"
+arrival_latency_minutes: 1
+point_in_time_rule: |
+  RSI calculated at market close using only data available up to that timestamp.
+  No future information used in calculation. 14-period lookback ensures
+  sufficient data for accurate calculation.
+
+# REQUIRED: Data Quality & SLA
+vendor_sla:
+  availability: 99.5
+  latency_minutes: 2
+  quality: 99.0
+
+revision_policy:
+  revision_frequency: "never"
+  revision_window_days: 0
+  notification_method: "none"
+
+# REQUIRED: Business Logic
+computation_logic: |
+  RSI (Relative Strength Index) with 14-period lookback:
+  RSI = 100 - (100 / (1 + RS))
+  RS = Average Gain / Average Loss over 14 periods
+  Uses Wilder's smoothing method for moving averages.
+  Calculated on daily closing prices.
+
+dependencies:
+  - "close_price"
+  - "volume"
+
+lookback_period_days: 30
+update_frequency: "daily"
+
+# REQUIRED: Validation & Monitoring
+validation_rules:
+  valid_range: [0, 100]
+  null_handling: "reject"
+  outlier_detection: "3_sigma"
+  monitoring_alerts:
+    - "value_out_of_range"
+    - "missing_data_threshold"
+    - "calculation_error"
+
+# REQUIRED: Compliance & Audit
+pii_classification: "none"
+regulatory_notes: |
+  Technical indicators derived from public market data.
+  No personal information or insider data used.
+  Complies with market data redistribution agreements.
+
+audit_trail: "git_commits"
+retention_policy: "7_years"
+
+# REQUIRED: Metadata
+created_by: "quant_analyst"
+created_at: "2024-01-15T10:30:00Z"
+approved_by: "risk_manager"
+approved_at: "2024-01-15T15:45:00Z"
+last_modified: "2024-01-15T15:45:00Z"
+
+# OPTIONAL: Extended Configuration
+feature_config:
+  period: 14
+  price_field: "close"
+  smoothing_method: "wilder"
+
+business_context:
+  purpose: "Momentum oscillator for overbought/oversold conditions"
+  interpretation: |
+    Values above 70 suggest overbought conditions.
+    Values below 30 suggest oversold conditions.
+    Divergences with price may signal trend reversals.
+  typical_range: [20, 80]
+  extreme_values: [10, 90]
+
+performance_expectations:
+  volatility: "medium"
+  correlation_with_price: 0.3
+  signal_frequency: "daily"
+  lag_characteristics: "minimal"

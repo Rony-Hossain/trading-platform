@@ -428,14 +428,9 @@ class SPATestFramework:
                 else:
                     relative_performance[:, i] = strategy.returns - benchmark_metrics.returns
             elif statistic == "sharpe_ratio":
-                # Rolling Sharpe ratio differences (simplified)
-                window = min(252, sample_size // 4)  # Quarterly rolling window
-                strategy_rolling_sharpe = self._rolling_sharpe(strategy.returns, window)
-                benchmark_rolling_sharpe = self._rolling_sharpe(benchmark_metrics.returns, window)
-                
-                relative_performance[:len(strategy_rolling_sharpe), i] = (
-                    strategy_rolling_sharpe - benchmark_rolling_sharpe
-                )
+                # For SPA test, use excess returns rather than rolling Sharpe
+                # Rolling Sharpe differences are complex and can cause numerical issues
+                relative_performance[:, i] = strategy.returns - benchmark_metrics.returns
             else:
                 # Default to excess returns
                 relative_performance[:, i] = strategy.returns - benchmark_metrics.returns
@@ -444,14 +439,28 @@ class SPATestFramework:
     
     def _spa_consistent_statistic(self, relative_performance: np.ndarray) -> float:
         """Calculate SPA consistent test statistic"""
+        if relative_performance.ndim == 1:
+            # Single strategy case
+            sample_mean = np.mean(relative_performance)
+            sample_var = np.var(relative_performance, ddof=1)
+            sample_size = len(relative_performance)
+            
+            if sample_var <= 0 or sample_mean <= 0:
+                return 0.0
+            
+            return np.sqrt(sample_size) * sample_mean / np.sqrt(sample_var)
+        
         sample_size, n_strategies = relative_performance.shape
         
         # Sample means
         sample_means = np.mean(relative_performance, axis=0)
         
         # Sample variance-covariance matrix
-        sample_cov = np.cov(relative_performance.T)
-        
+        if n_strategies == 1:
+            sample_var = np.var(relative_performance[:, 0], ddof=1)
+        else:
+            sample_cov = np.cov(relative_performance.T)
+            
         # Consistent test statistic
         max_mean = np.max(sample_means)
         
@@ -460,16 +469,31 @@ class SPATestFramework:
         
         # Find strategy with maximum mean
         max_idx = np.argmax(sample_means)
-        sample_var = sample_cov[max_idx, max_idx]
         
-        if sample_var <= 0:
+        if n_strategies == 1:
+            sample_var_max = sample_var
+        else:
+            sample_var_max = sample_cov[max_idx, max_idx] if sample_cov.ndim > 0 else sample_cov
+        
+        if sample_var_max <= 0:
             return 0.0
         
-        test_stat = np.sqrt(sample_size) * max_mean / np.sqrt(sample_var)
+        test_stat = np.sqrt(sample_size) * max_mean / np.sqrt(sample_var_max)
         return test_stat
     
     def _spa_lower_statistic(self, relative_performance: np.ndarray) -> float:
         """Calculate SPA lower test statistic"""
+        if relative_performance.ndim == 1:
+            # Single strategy case
+            sample_mean = np.mean(relative_performance)
+            sample_std = np.std(relative_performance, ddof=1)
+            sample_size = len(relative_performance)
+            
+            if sample_std == 0:
+                return 0.0
+            
+            return sample_mean / (sample_std / np.sqrt(sample_size))
+        
         sample_size, n_strategies = relative_performance.shape
         sample_means = np.mean(relative_performance, axis=0)
         
@@ -484,6 +508,17 @@ class SPATestFramework:
     
     def _spa_upper_statistic(self, relative_performance: np.ndarray) -> float:
         """Calculate SPA upper test statistic"""
+        if relative_performance.ndim == 1:
+            # Single strategy case
+            sample_mean = np.mean(relative_performance)
+            sample_std = np.std(relative_performance, ddof=1)
+            sample_size = len(relative_performance)
+            
+            if sample_mean <= 0 or sample_std == 0:
+                return 0.0
+            
+            return sample_mean / (sample_std / np.sqrt(sample_size))
+        
         sample_size, n_strategies = relative_performance.shape
         sample_means = np.mean(relative_performance, axis=0)
         

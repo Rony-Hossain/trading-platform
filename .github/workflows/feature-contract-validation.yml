@@ -1,0 +1,221 @@
+name: Feature Contract Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'docs/feature-contracts/**/*.yml'
+      - 'docs/feature-contracts/**/*.yaml'
+      - 'tools/feature_contract_validator.py'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'docs/feature-contracts/**/*.yml'
+      - 'docs/feature-contracts/**/*.yaml'
+      - 'tools/feature_contract_validator.py'
+
+jobs:
+  validate-contracts:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r tools/requirements-validator.txt
+        
+    - name: Create reports directory
+      run: mkdir -p reports
+      
+    - name: Validate feature contracts
+      run: |
+        python tools/feature_contract_validator.py generate-report docs/feature-contracts \
+          --output reports/feature_contract_validation.json
+        
+    - name: Upload validation report
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: feature-contract-validation-report
+        path: reports/feature_contract_validation.json
+        retention-days: 30
+        
+    - name: Display validation summary
+      if: always()
+      run: |
+        echo "## Feature Contract Validation Results" >> $GITHUB_STEP_SUMMARY
+        if [ -f reports/feature_contract_validation.json ]; then
+          python -c "
+import json
+with open('reports/feature_contract_validation.json') as f:
+    report = json.load(f)
+    
+summary = report['summary']
+print(f'- **Total Contracts**: {summary[\"total_contracts\"]}')
+print(f'- **Valid Contracts**: {summary[\"valid_contracts\"]}')
+print(f'- **Invalid Contracts**: {summary[\"invalid_contracts\"]}')
+print(f'- **Success Rate**: {summary[\"success_rate\"]:.1f}%')
+
+if report['errors']:
+    print(f'\\n### ❌ Errors ({len(report[\"errors\"])})')
+    for error in report['errors'][:10]:  # Limit to first 10
+        print(f'- {error}')
+    if len(report['errors']) > 10:
+        print(f'- ... and {len(report[\"errors\"]) - 10} more errors')
+
+if report['warnings']:
+    print(f'\\n### ⚠️ Warnings ({len(report[\"warnings\"])})')
+    for warning in report['warnings'][:5]:  # Limit to first 5
+        print(f'- {warning}')
+    if len(report['warnings']) > 5:
+        print(f'- ... and {len(report[\"warnings\"]) - 5} more warnings')
+          " >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ Validation report not generated" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+    - name: Comment PR with validation results
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          let comment = '## 🔍 Feature Contract Validation Results\n\n';
+          
+          try {
+            const report = JSON.parse(fs.readFileSync('reports/feature_contract_validation.json', 'utf8'));
+            const summary = report.summary;
+            
+            if (summary.success_rate === 100) {
+              comment += `✅ **All ${summary.total_contracts} feature contracts are valid!**\n\n`;
+            } else {
+              comment += `❌ **${summary.invalid_contracts} of ${summary.total_contracts} contracts failed validation**\n\n`;
+              comment += `- Success Rate: ${summary.success_rate.toFixed(1)}%\n`;
+              comment += `- Valid: ${summary.valid_contracts}\n`;
+              comment += `- Invalid: ${summary.invalid_contracts}\n\n`;
+            }
+            
+            if (report.errors.length > 0) {
+              comment += `### ❌ Errors (${report.errors.length})\n`;
+              report.errors.slice(0, 5).forEach(error => {
+                comment += `- ${error}\n`;
+              });
+              if (report.errors.length > 5) {
+                comment += `- ... and ${report.errors.length - 5} more errors\n`;
+              }
+              comment += '\n';
+            }
+            
+            if (report.warnings.length > 0) {
+              comment += `### ⚠️ Warnings (${report.warnings.length})\n`;
+              report.warnings.slice(0, 3).forEach(warning => {
+                comment += `- ${warning}\n`;
+              });
+              if (report.warnings.length > 3) {
+                comment += `- ... and ${report.warnings.length - 3} more warnings\n`;
+              }
+            }
+            
+          } catch (error) {
+            comment += '❌ Failed to generate validation report\n';
+            comment += `Error: ${error.message}\n`;
+          }
+          
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          
+          const existingComment = comments.find(comment => 
+            comment.body.includes('Feature Contract Validation Results')
+          );
+          
+          if (existingComment) {
+            // Update existing comment
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: comment
+            });
+          } else {
+            // Create new comment
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+          }
+
+  validate-templates:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r tools/requirements-validator.txt
+        
+    - name: Validate template syntax
+      run: |
+        echo "Validating feature contract templates..."
+        for template in docs/feature-contracts/templates/*.yml; do
+          echo "Checking $template..."
+          python -c "
+import yaml
+import sys
+try:
+    with open('$template', 'r') as f:
+        yaml.safe_load(f)
+    print('✅ $template - Valid YAML syntax')
+except Exception as e:
+    print('❌ $template - Invalid YAML syntax: {e}')
+    sys.exit(1)
+          "
+        done
+        
+    - name: Check template completeness
+      run: |
+        echo "Checking template completeness..."
+        python -c "
+import os
+import yaml
+
+required_templates = ['technical', 'fundamental', 'sentiment', 'macro', 'options', 'event']
+template_dir = 'docs/feature-contracts/templates'
+
+found_templates = []
+for template_type in required_templates:
+    template_path = f'{template_dir}/{template_type}_feature_template.yml'
+    if os.path.exists(template_path):
+        found_templates.append(template_type)
+        print(f'✅ Found {template_type} template')
+    else:
+        print(f'❌ Missing {template_type} template')
+
+if len(found_templates) == len(required_templates):
+    print(f'\\n✅ All {len(required_templates)} required templates are present')
+else:
+    print(f'\\n❌ Missing {len(required_templates) - len(found_templates)} templates')
+    exit(1)
+        "

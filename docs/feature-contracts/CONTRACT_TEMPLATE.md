@@ -1,117 +1,273 @@
 # Feature Contract Template
 
-## Overview
-This template defines the mandatory Point-in-Time (PIT) contract for all features in the trading platform. Every feature must have a completed contract before being used in training or production.
+This template defines the required contract specification for all features used in the trading platform to ensure Point-in-Time (PIT) compliance and data integrity.
 
-## Required Fields
+## Contract Fields
 
-### 1. Feature Identification
-- **feature_name**: Unique identifier for the feature
-- **feature_type**: Category (technical, fundamental, sentiment, macro, options, derived)
-- **data_source**: Primary data provider (yahoo, finnhub, custom, computed)
-- **version**: Semantic version (e.g., 1.0.0)
+### Core Temporal Fields
 
-### 2. Point-in-Time Constraints
-- **as_of_ts**: Timestamp when feature value is known/available for use
-- **effective_ts**: Timestamp when underlying event occurred 
-- **arrival_latency**: Expected delay from effective_ts to as_of_ts (in minutes)
-- **point_in_time_rule**: Specific PIT access rules and constraints
+#### `as_of_ts` (Required)
+- **Type**: ISO 8601 timestamp (YYYY-MM-DDTHH:MM:SS.sssZ)
+- **Description**: The point-in-time timestamp representing when this feature value was "known" or "observable" in the real world
+- **PIT Rule**: Must be <= prediction timestamp to avoid future data leakage
+- **Example**: `"2024-01-15T09:30:00.000Z"`
+- **Validation**: Must be valid timestamp, cannot be future relative to prediction time
 
-### 3. Data Quality & SLA
-- **vendor_SLA**: Service level agreement from data provider
-  - **availability**: Expected uptime (e.g., 99.9%)
-  - **latency**: Maximum delivery delay (e.g., 15 minutes)
-  - **quality**: Expected accuracy/completeness (e.g., 99.5%)
-- **revision_policy**: How and when data gets revised
-  - **revision_frequency**: How often revisions occur (never, daily, weekly)
-  - **revision_window**: How far back revisions can occur (e.g., 30 days)
-  - **notification_method**: How revisions are communicated
+#### `effective_ts` (Required)
+- **Type**: ISO 8601 timestamp (YYYY-MM-DDTHH:MM:SS.sssZ)
+- **Description**: The timestamp when this feature becomes available for use in the trading system
+- **PIT Rule**: Must be >= as_of_ts + arrival_latency
+- **Example**: `"2024-01-15T09:35:00.000Z"`
+- **Validation**: effective_ts >= as_of_ts + arrival_latency
 
-### 4. Business Logic
-- **computation_logic**: How feature is calculated (for derived features)
-- **dependencies**: Other features this depends on
-- **lookback_period**: Historical data required (e.g., 30 days)
-- **update_frequency**: How often feature updates (real-time, daily, weekly)
+#### `arrival_latency` (Required)
+- **Type**: Duration in seconds (integer) or ISO 8601 duration
+- **Description**: Expected delay from when data is "as of" to when it arrives in our system
+- **Purpose**: Models real-world data delivery delays for realistic backtesting
+- **Example**: `300` (5 minutes) or `"PT5M"`
+- **Validation**: Must be non-negative integer or valid duration
 
-### 5. Validation & Monitoring
-- **valid_range**: Expected value range (min, max)
-- **null_handling**: How null/missing values are treated
-- **outlier_detection**: Method for identifying anomalous values
-- **monitoring_alerts**: Conditions that trigger data quality alerts
+### Data Quality & SLA Fields
 
-### 6. Compliance & Audit
-- **pii_classification**: Whether feature contains personal information (none, masked, anonymized)
-- **regulatory_notes**: Any regulatory considerations
-- **audit_trail**: How changes to this feature are tracked
-- **retention_policy**: How long historical data is kept
+#### `point_in_time_rule` (Required)
+- **Type**: String (enum: "strict", "relaxed", "custom")
+- **Description**: PIT access constraint level for this feature
+- **Values**:
+  - `"strict"`: Zero tolerance for future data access
+  - `"relaxed"`: Allow minor timing discrepancies (<1min)
+  - `"custom"`: Custom rule defined in additional_rules field
+- **Example**: `"strict"`
+- **Validation**: Must be one of allowed enum values
 
-## Example Contract
+#### `vendor_SLA` (Required)
+- **Type**: Object with service level agreement details
+- **Description**: Data vendor's guaranteed service levels
+- **Structure**:
+  ```json
+  {
+    "availability_pct": 99.5,
+    "max_latency_seconds": 300,
+    "update_frequency": "1min",
+    "backfill_policy": "24h_window",
+    "quality_guarantee": "99.9%"
+  }
+  ```
+- **Validation**: All SLA fields must be present and valid
 
-```yaml
-# Example: VIX Fear Index Contract
-feature_name: "vix_close"
-feature_type: "macro"
-data_source: "yahoo"
-version: "1.0.0"
+#### `revision_policy` (Required)
+- **Type**: Object describing how/when data gets revised
+- **Description**: Policy for handling data corrections and revisions
+- **Structure**:
+  ```json
+  {
+    "allows_revisions": true,
+    "revision_window_hours": 24,
+    "revision_notification": "immediate",
+    "backfill_on_revision": true,
+    "version_tracking": true
+  }
+  ```
+- **Validation**: Policy object must be complete and consistent
 
-# Point-in-Time Constraints
-as_of_ts: "T+1 09:30 ET"  # Available next trading day at market open
-effective_ts: "T 16:00 ET"  # VIX close value from previous day
-arrival_latency: 17.5  # hours (overnight + 30 min processing)
-point_in_time_rule: "No access to T+0 VIX close until T+1 market open"
+### Metadata Fields
 
-# Data Quality & SLA  
-vendor_SLA:
-  availability: 99.9%
-  latency: "15 minutes after market close"
-  quality: 99.99%
-revision_policy:
-  revision_frequency: "never"
-  revision_window: "0 days"
-  notification_method: "none"
+#### `feature_id` (Required)
+- **Type**: String (snake_case identifier)
+- **Description**: Unique identifier for this feature
+- **Pattern**: `^[a-z][a-z0-9_]*[a-z0-9]$`
+- **Example**: `"stock_price_close_1min"`
 
-# Business Logic
-computation_logic: "Direct feed from CBOE via Yahoo Finance"
-dependencies: []
-lookback_period: "365 days"
-update_frequency: "daily"
+#### `feature_name` (Required)
+- **Type**: String (human-readable name)
+- **Description**: Descriptive name for the feature
+- **Example**: `"1-Minute Stock Close Price"`
 
-# Validation & Monitoring
-valid_range: [5.0, 80.0]
-null_handling: "forward_fill_max_3_days"
-outlier_detection: "3_sigma_rolling_30d"
-monitoring_alerts: 
-  - "null_for_2_days"
-  - "outside_historical_range"
-  - "latency_exceed_sla"
+#### `data_source` (Required)
+- **Type**: String (data provider identifier)
+- **Description**: Primary data source/vendor
+- **Example**: `"bloomberg_api"`, `"yahoo_finance"`, `"internal_calculation"`
 
-# Compliance & Audit
-pii_classification: "none"
-regulatory_notes: "Public market data, no restrictions"
-audit_trail: "git_commits + mlflow_tags"
-retention_policy: "7_years"
+#### `feature_type` (Required)
+- **Type**: String (enum)
+- **Description**: Classification of feature type
+- **Values**: `"price"`, `"volume"`, `"sentiment"`, `"fundamental"`, `"technical"`, `"macro"`, `"derived"`
+
+#### `granularity` (Required)
+- **Type**: String (time interval)
+- **Description**: Time granularity of the feature
+- **Example**: `"1min"`, `"5min"`, `"1hour"`, `"1day"`
+
+#### `currency` (Optional)
+- **Type**: String (ISO 4217 currency code)
+- **Description**: Currency denomination for monetary features
+- **Example**: `"USD"`, `"EUR"`
+
+#### `unit` (Optional)
+- **Type**: String
+- **Description**: Unit of measurement
+- **Example**: `"dollars"`, `"shares"`, `"percentage"`, `"ratio"`
+
+### Compliance Fields
+
+#### `pit_audit_status` (System Generated)
+- **Type**: String (enum: "compliant", "warning", "violation")
+- **Description**: Current PIT compliance status
+- **Auto-generated**: Set by PIT auditor system
+
+#### `last_audit_ts` (System Generated)
+- **Type**: ISO 8601 timestamp
+- **Description**: Timestamp of last PIT audit
+- **Auto-generated**: Set by PIT auditor system
+
+#### `contract_version` (Required)
+- **Type**: String (semantic version)
+- **Description**: Version of this contract specification
+- **Example**: `"1.0.0"`
+
+#### `created_by` (Required)
+- **Type**: String (user identifier)
+- **Description**: User who created this contract
+- **Example**: `"john.doe@company.com"`
+
+#### `approved_by` (Optional)
+- **Type**: String (user identifier)
+- **Description**: User who approved this contract for production
+- **Example**: `"jane.smith@company.com"`
+
+#### `approval_date` (Optional)
+- **Type**: ISO 8601 timestamp
+- **Description**: When this contract was approved
+- **Example**: `"2024-01-15T14:30:00.000Z"`
+
+### Extended Configuration
+
+#### `additional_rules` (Optional)
+- **Type**: Object
+- **Description**: Custom PIT rules when point_in_time_rule is "custom"
+- **Example**:
+  ```json
+  {
+    "custom_lag_seconds": 120,
+    "weekend_handling": "forward_fill",
+    "holiday_handling": "skip"
+  }
+  ```
+
+#### `dependencies` (Optional)
+- **Type**: Array of feature IDs
+- **Description**: Other features this feature depends on
+- **Example**: `["stock_price_open_1min", "stock_volume_1min"]`
+
+#### `tags` (Optional)
+- **Type**: Array of strings
+- **Description**: Classification tags for feature discovery
+- **Example**: `["equity", "price", "real_time", "core"]`
+
+## Complete Contract Example
+
+```json
+{
+  "feature_id": "aapl_close_price_1min",
+  "feature_name": "Apple Inc. 1-Minute Close Price",
+  "data_source": "bloomberg_api",
+  "feature_type": "price",
+  "granularity": "1min",
+  "currency": "USD",
+  "unit": "dollars",
+  
+  "as_of_ts": "2024-01-15T09:30:00.000Z",
+  "effective_ts": "2024-01-15T09:35:00.000Z",
+  "arrival_latency": 300,
+  
+  "point_in_time_rule": "strict",
+  "vendor_SLA": {
+    "availability_pct": 99.9,
+    "max_latency_seconds": 300,
+    "update_frequency": "1min",
+    "backfill_policy": "24h_window",
+    "quality_guarantee": "99.95%"
+  },
+  "revision_policy": {
+    "allows_revisions": false,
+    "revision_window_hours": 0,
+    "revision_notification": "none",
+    "backfill_on_revision": false,
+    "version_tracking": true
+  },
+  
+  "contract_version": "1.0.0",
+  "created_by": "quant.team@company.com",
+  "approved_by": "risk.manager@company.com",
+  "approval_date": "2024-01-15T14:30:00.000Z",
+  
+  "tags": ["equity", "price", "real_time", "core", "aapl"],
+  "dependencies": []
+}
 ```
 
-## Contract Lifecycle
+## Validation Rules
 
-1. **Creation**: New features must have contract before first use
-2. **Review**: Contracts reviewed by data team + compliance
-3. **Approval**: Signed off by lead data scientist + risk manager  
-4. **Monitoring**: Automated validation against contract terms
-5. **Updates**: Changes require new version + re-approval
+### Temporal Consistency
+1. `as_of_ts <= effective_ts`
+2. `effective_ts >= as_of_ts + arrival_latency`
+3. `as_of_ts <= prediction_timestamp` (enforced at runtime)
+4. All timestamps must be valid ISO 8601 format
 
-## Enforcement
+### PIT Compliance
+1. Strict rule: `effective_ts` must be available before feature use
+2. No future data access: `as_of_ts` cannot exceed prediction time
+3. Latency modeling: `arrival_latency` must be realistic for data source
 
-- CI/CD pipeline blocks deployment if features lack contracts
-- Automated validation runs nightly to check contract compliance
-- Violations generate alerts and block model deployment
-- All contract changes tracked in audit log
+### Business Logic
+1. `vendor_SLA.availability_pct` must be between 0.0 and 100.0
+2. `vendor_SLA.max_latency_seconds` should align with `arrival_latency`
+3. `revision_policy` must be consistent with `vendor_SLA`
 
-## Templates by Feature Type
+### Required Fields
+All fields marked as "Required" must be present and non-null in every contract.
 
-- [Technical Indicators](./templates/technical_contract.yml)
-- [Fundamental Data](./templates/fundamental_contract.yml) 
-- [Sentiment Features](./templates/sentiment_contract.yml)
-- [Options Data](./templates/options_contract.yml)
-- [Macro Factors](./templates/macro_contract.yml)
-- [Derived Features](./templates/derived_contract.yml)
+## Usage in Code
+
+Feature contracts must be registered before feature use:
+
+```python
+from core.feature_contracts import FeatureContractValidator
+
+validator = FeatureContractValidator()
+
+# Register contract
+contract = {
+    "feature_id": "aapl_close_price_1min",
+    # ... full contract as above
+}
+validator.register_contract(contract)
+
+# Validate feature usage
+feature_data = {
+    "as_of_timestamp": "2024-01-15T09:30:00.000Z",
+    "effective_timestamp": "2024-01-15T09:35:00.000Z",
+    "value": 150.25
+}
+
+violations = validator.check_pit_compliance("aapl_close_price_1min", feature_data)
+if violations:
+    raise PitComplianceError(f"PIT violations: {violations}")
+```
+
+## CI/CD Integration
+
+All feature contracts are automatically validated in CI/CD:
+
+```bash
+# Pre-commit hook
+python ci/pit_contract_check.py --validate-all
+
+# Environment variable for enforcement
+export PIT_CONTRACTS_ENFORCE=true
+```
+
+Deployment will fail if:
+- New features lack contracts
+- Contracts fail validation
+- PIT compliance violations detected
+- Required approvals missing

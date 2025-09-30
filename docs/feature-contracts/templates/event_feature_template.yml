@@ -1,0 +1,220 @@
+# Event Feature Contract Template
+# Use this template for event-driven features (earnings, splits, mergers, economic releases, etc.)
+
+# REQUIRED: Basic Identification
+feature_name: "example_earnings_surprise_impact"  # REPLACE: Unique feature identifier
+feature_type: "event"                             # FIXED: Must be "event" for this template
+data_source: "event_data_service"                 # REPLACE: Source service/vendor name
+version: "1.0.0"                                 # REPLACE: Semantic versioning
+
+# REQUIRED: Point-in-Time Constraints
+as_of_ts_rule: "announcement_time"               # CHOOSE: announcement_time | market_close | filing_time
+effective_ts_rule: "market_open_next"            # CHOOSE: announcement_time | market_open_next | immediate
+arrival_latency_minutes: 5                      # REPLACE: Expected delay (5 min for earnings processing)
+point_in_time_rule: |                           # REPLACE: Specific PIT constraints
+  Event data uses precise announcement timestamps from company filings.
+  Market impact measurement starts at next market open after announcement.
+  Pre-announcement estimates are tracked separately to avoid lookahead bias.
+  Event significance calculated using realized vs expected metrics.
+
+# REQUIRED: Data Quality & SLA
+vendor_sla:
+  availability: 99.0           # REPLACE: High availability for critical events
+  latency_minutes: 5           # REPLACE: Fast processing for market-moving events
+  quality: 97.0               # REPLACE: Event data can have parsing complexities
+
+revision_policy:
+  revision_frequency: "weekly"  # CHOOSE: never | daily | weekly | monthly
+  revision_window_days: 30     # REPLACE: Events can be revised/corrected
+  notification_method: "alert" # CHOOSE: none | email | webhook | alert
+
+# REQUIRED: Business Logic
+computation_logic: |          # REPLACE: Clear description of calculation
+  Earnings Surprise Impact Factor calculation:
+  1. Collect actual vs consensus EPS from multiple sources
+  2. Calculate surprise magnitude: (Actual - Consensus) / |Consensus|
+  3. Normalize by historical volatility of surprises for the stock
+  4. Weight by earnings certainty (analyst dispersion)
+  5. Combine with revenue surprise for composite score
+  6. Apply sector-specific impact multipliers
+
+dependencies:                 # REPLACE: List of required features/data
+  - "earnings_announcements"
+  - "analyst_estimates_eps"
+  - "analyst_estimates_revenue"
+  - "historical_stock_volatility"
+  - "sector_classification"
+
+lookback_period_days: 1095    # REPLACE: 3 years for earnings patterns
+update_frequency: "event_driven" # REPLACE: Updated only when events occur
+
+# REQUIRED: Validation & Monitoring
+validation_rules:
+  valid_range: [-10, 10]      # REPLACE: Surprise impact range (10x standard deviations)
+  null_handling: "reject"     # CHOOSE: reject | forward_fill | interpolate
+  outlier_detection: "percentile" # CHOOSE: 3_sigma | iqr | percentile | custom
+  monitoring_alerts:          # REPLACE: List of alerting conditions
+    - "missing_earnings_data"
+    - "extreme_surprise_values"
+    - "consensus_estimate_gaps"
+    - "announcement_time_errors"
+
+# REQUIRED: Compliance & Audit
+pii_classification: "none"    # CHOOSE: none | masked | anonymized | sensitive
+regulatory_notes: |           # REPLACE: Regulatory considerations
+  Event data sourced from public company filings and press releases.
+  Announcement times verified against multiple sources.
+  Historical accuracy maintained for regulatory compliance.
+  No material non-public information used in calculations.
+
+audit_trail: "database_logs"  # CHOOSE: git_commits | database_logs | manual
+retention_policy: "10_years"  # REPLACE: Long retention for event data
+
+# REQUIRED: Metadata
+created_by: "event_analyst"              # REPLACE: Creator's identifier
+created_at: "2024-01-15T10:30:00Z"      # REPLACE: ISO 8601 timestamp
+approved_by: "quantitative_researcher"   # REPLACE: Approver's identifier  
+approved_at: "2024-01-15T16:00:00Z"      # REPLACE: ISO 8601 timestamp
+last_modified: "2024-01-15T16:00:00Z"    # Will be auto-updated
+
+# OPTIONAL: Extended Configuration
+feature_config:               # REPLACE: Feature-specific parameters
+  event_types:                # Types of events to process
+    - "earnings_announcement"
+    - "guidance_update"
+    - "management_change"
+  surprise_calculation: "relative" # How to calculate surprise magnitude
+  consensus_sources: 3        # Minimum number of analyst estimates
+  impact_window_hours: 72     # Hours to measure post-event impact
+  sector_normalization: true  # Apply sector-specific adjustments
+  market_cap_weighting: true  # Weight by market capitalization
+
+business_context:             # REPLACE: Business use and interpretation
+  purpose: "Quantify market impact of corporate earnings announcements"
+  interpretation: |
+    Positive values indicate upside earnings surprises with strong market impact.
+    Negative values indicate disappointing results with negative price reaction.
+    Magnitude indicates both surprise size and expected market sensitivity.
+    Used for event-driven strategies and risk management around earnings.
+  typical_range: [-2, 2]      # Normal surprise impact range
+  extreme_values: [-5, 5]     # Extreme but valid impact levels
+
+performance_expectations:     # REPLACE: Expected behavior characteristics
+  volatility: "event_driven"  # High volatility around earnings events
+  correlation_with_returns: 0.4 # Moderate correlation with post-announcement returns
+  signal_frequency: "quarterly" # Most events are quarterly earnings
+  lag_characteristics: "immediate" # Immediate market reaction to events
+
+# TESTING: Validation test cases
+test_cases:
+  - name: "standard_earnings_surprise"
+    description: "Normal earnings beat with market reaction"
+    input_data:
+      actual_eps: 2.50
+      consensus_eps: 2.25
+      historical_volatility: 0.35
+      analyst_count: 15
+      revenue_surprise: 0.02
+    expected_output: 1.85      # Normalized surprise impact
+    tolerance: 0.10
+  
+  - name: "earnings_miss_scenarios"
+    description: "Handle earnings disappointments"
+    scenarios:
+      - "large_eps_miss"
+      - "revenue_guidance_cut"
+      - "margin_compression"
+  
+  - name: "data_quality_edge_cases"
+    description: "Handle data quality issues"
+    scenarios:
+      - "missing_consensus_estimates"
+      - "delayed_announcement"
+      - "restatement_scenario"
+
+# MONITORING: Production monitoring configuration
+monitoring_config:
+  alert_thresholds:
+    missing_events_percentage: 5 # Alert if >5% of expected events missing
+    processing_delay_minutes: 10 # Alert on processing delays
+    extreme_impact_count: 20   # Alert if >20 extreme impacts per week
+    consensus_data_gaps: 10    # Alert on consensus estimate gaps
+  
+  quality_metrics:
+    event_capture_rate: 95.0   # Percentage of events successfully captured
+    timing_accuracy: 98.0     # Accuracy of event timestamps
+    calculation_success_rate: 97.0 # Successful impact calculations
+  
+  reconciliation:
+    benchmark_sources:         # Sources for validation
+      - "factset_events"
+      - "bloomberg_earnings"
+      - "company_press_releases"
+    validation_frequency: "daily"
+    manual_verification_sample: 50 # Events manually verified weekly
+
+# EVENT SPECIFIC: Corporate actions and announcements
+event_config:
+  earnings_calendar:
+    advance_notice_days: 30    # How far ahead to track earnings dates
+    confirmation_sources: 3    # Minimum sources to confirm date
+    time_zone_handling: "company_hq" # Use company headquarters timezone
+  
+  announcement_processing:
+    parsing_methods:           # How to extract data from announcements
+      - "structured_feeds"
+      - "press_release_nlp"
+      - "filing_extraction"
+    confidence_scoring: true   # Score confidence in parsed data
+    human_verification: "high_impact" # When to require human verification
+  
+  impact_measurement:
+    price_windows: [1, 24, 72] # Hours post-announcement to measure impact
+    volume_normalization: true # Adjust for unusual trading volume
+    market_condition_adjustment: true # Adjust for overall market moves
+  
+  seasonal_patterns:
+    earnings_season_adjustment: true # Account for earnings season effects
+    holiday_period_handling: "exclude" # How to handle holiday announcements
+    quarterly_clustering: true # Account for quarterly reporting clusters
+
+# CALENDAR: Event scheduling and timing
+calendar_config:
+  earnings_seasons:
+    q1_typical_period: ["Apr 1", "May 15"]
+    q2_typical_period: ["Jul 1", "Aug 15"] 
+    q3_typical_period: ["Oct 1", "Nov 15"]
+    q4_typical_period: ["Jan 15", "Mar 15"]
+  
+  market_hours:
+    pre_market_start: "04:00"  # ET
+    market_open: "09:30"       # ET
+    market_close: "16:00"      # ET
+    after_hours_end: "20:00"   # ET
+  
+  blackout_periods:
+    major_holidays: true       # Exclude major market holidays
+    fomc_meeting_days: false   # Don't exclude FOMC days
+    month_end_adjustments: true # Account for month-end effects
+
+# EXAMPLE VALUES (for documentation)
+example_data:
+  sample_input:
+    timestamp: "2024-01-25T16:30:00Z"
+    symbol: "AAPL"
+    event_type: "earnings_announcement"
+    actual_eps: 2.18
+    consensus_eps: 2.10
+    actual_revenue: 119.58e9
+    consensus_revenue: 117.91e9
+    analyst_count: 25
+  
+  sample_output:
+    timestamp: "2024-01-25T16:30:00Z"
+    earnings_surprise_impact: 1.42
+    eps_surprise_pct: 3.81
+    revenue_surprise_pct: 1.42
+    composite_score: 1.85
+    confidence: 0.94
+    expected_volatility_impact: 0.08
+    quality_score: 0.96

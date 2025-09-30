@@ -1,0 +1,220 @@
+groups:
+  - name: feature_skew_alerts
+    rules:
+      # Critical skew ratio alerts
+      - alert: FeatureSkewCritical
+        expr: |
+          feature_skew_ratio{environment="comparison"} < 0.7 or 
+          feature_skew_ratio{environment="comparison"} > 1.3
+        for: 0m
+        labels:
+          severity: critical
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Critical feature skew detected for {{ $labels.feature }} on {{ $labels.symbol }}"
+          description: |
+            Feature {{ $labels.feature }} for symbol {{ $labels.symbol }} has a critical skew ratio of {{ $value | printf "%.3f" }}.
+            This indicates significant drift between offline and online feature values.
+            Offline/Online ratio should be between 0.7 and 1.3.
+          runbook_url: "https://docs.trading-platform.com/runbooks/feature-skew"
+          dashboard_url: "http://grafana:3000/d/feature-skew/feature-skew-monitoring"
+
+      # High skew absolute difference alerts  
+      - alert: FeatureSkewHigh
+        expr: |
+          feature_skew_absolute{environment="comparison"} > 5.0
+        for: 2m
+        labels:
+          severity: high
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "High absolute feature skew detected for {{ $labels.feature }} on {{ $labels.symbol }}"
+          description: |
+            Feature {{ $labels.feature }} for symbol {{ $labels.symbol }} has high absolute difference: {{ $value | printf "%.3f" }}.
+            This may indicate data quality issues or processing differences between environments.
+          runbook_url: "https://docs.trading-platform.com/runbooks/feature-skew"
+
+      # Medium skew ratio alerts
+      - alert: FeatureSkewMedium
+        expr: |
+          feature_skew_ratio{environment="comparison"} < 0.8 or 
+          feature_skew_ratio{environment="comparison"} > 1.2
+        for: 5m
+        labels:
+          severity: medium
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Medium feature skew detected for {{ $labels.feature }} on {{ $labels.symbol }}"
+          description: |
+            Feature {{ $labels.feature }} for symbol {{ $labels.symbol }} has moderate skew ratio: {{ $value | printf "%.3f" }}.
+            Monitor for trending issues. Ratio should ideally be close to 1.0.
+
+      # Skew violations count alerts
+      - alert: SkewViolationsHigh
+        expr: skew_violations_total{severity="critical"} > 5
+        for: 1m
+        labels:
+          severity: critical
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "High number of critical skew violations detected"
+          description: |
+            {{ $value }} critical skew violations detected across all features.
+            This indicates systematic issues with feature processing between environments.
+          runbook_url: "https://docs.trading-platform.com/runbooks/feature-skew"
+
+      - alert: SkewViolationsMedium
+        expr: skew_violations_total{severity="high"} > 10
+        for: 3m
+        labels:
+          severity: high
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Multiple high-severity skew violations detected"
+          description: |
+            {{ $value }} high-severity skew violations detected.
+            Review feature processing pipelines for data quality issues.
+
+      # Missing skew monitoring data
+      - alert: SkewMonitoringDown
+        expr: |
+          up{job="pushgateway"} == 0 or
+          absent(feature_skew_ratio)
+        for: 10m
+        labels:
+          severity: high
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Skew monitoring system is down"
+          description: |
+            The feature skew monitoring system appears to be down.
+            No skew metrics have been received in the last 10 minutes.
+            Check the skew monitoring job and pushgateway connectivity.
+
+      # Stale skew data
+      - alert: SkewDataStale
+        expr: |
+          time() - timestamp(feature_skew_ratio) > 86400
+        for: 1m
+        labels:
+          severity: medium
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Skew monitoring data is stale"
+          description: |
+            Feature skew data for {{ $labels.feature }} on {{ $labels.symbol }} is over 24 hours old.
+            Last update: {{ $value | humanizeTimestamp }}.
+            Check if the nightly skew monitoring job is running correctly.
+
+  - name: feature_processing_alerts
+    rules:
+      # Feature processing lag between environments
+      - alert: FeatureProcessingLag
+        expr: |
+          increase(feature_skew_absolute[1h]) > 10
+        for: 5m
+        labels:
+          severity: medium
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Increasing feature processing lag detected"
+          description: |
+            Feature {{ $labels.feature }} on {{ $labels.symbol }} shows increasing processing lag.
+            Skew has increased by {{ $value | printf "%.2f" }} in the last hour.
+            This may indicate different processing schedules or system load differences.
+
+      # Systematic skew across multiple features
+      - alert: SystematicSkewDetected
+        expr: |
+          count by (symbol) (
+            feature_skew_ratio{environment="comparison"} < 0.9 or 
+            feature_skew_ratio{environment="comparison"} > 1.1
+          ) > 5
+        for: 10m
+        labels:
+          severity: high
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Systematic skew detected across multiple features for {{ $labels.symbol }}"
+          description: |
+            Symbol {{ $labels.symbol }} has {{ $value }} features with skew ratios outside normal range.
+            This suggests systematic processing differences between offline and online environments.
+            Investigate data pipeline configurations and timing differences.
+
+      # Zero or infinite skew values (data quality issues)
+      - alert: InvalidSkewValues
+        expr: |
+          feature_skew_ratio{environment="comparison"} == 0 or 
+          feature_skew_ratio{environment="comparison"} == +Inf or
+          feature_skew_ratio{environment="comparison"} != feature_skew_ratio{environment="comparison"}
+        for: 0m
+        labels:
+          severity: critical
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Invalid skew ratio detected for {{ $labels.feature }} on {{ $labels.symbol }}"
+          description: |
+            Feature {{ $labels.feature }} on {{ $labels.symbol }} has invalid skew ratio: {{ $value }}.
+            This indicates zero values, division by zero, or NaN results in feature calculations.
+            Check for data quality issues in source data or feature computation logic.
+
+  - name: skew_monitoring_health
+    rules:
+      # Monitoring job execution success
+      - alert: SkewMonitoringJobFailed
+        expr: |
+          increase(skew_violations_total[24h]) == 0 and
+          time() - timestamp(skew_violations_total) > 90000
+        for: 1m
+        labels:
+          severity: high
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Skew monitoring job appears to have failed"
+          description: |
+            No skew monitoring updates received in over 25 hours.
+            The nightly skew monitoring job may have failed or crashed.
+            Check job logs and execution status.
+
+      # Feature coverage monitoring
+      - alert: LowFeatureCoverage
+        expr: |
+          count by (symbol) (feature_skew_ratio{environment="comparison"}) < 10
+        for: 15m
+        labels:
+          severity: medium
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Low feature coverage in skew monitoring for {{ $labels.symbol }}"
+          description: |
+            Only {{ $value }} features monitored for skew on symbol {{ $labels.symbol }}.
+            Expected coverage should be higher. Check if features are being computed in both environments.
+
+      # Database connectivity for skew monitoring
+      - alert: SkewMonitoringDBIssues
+        expr: |
+          rate(feature_skew_ratio[5m]) == 0 and
+          up{job="pushgateway"} == 1
+        for: 10m
+        labels:
+          severity: medium
+          component: feature_monitoring
+          team: data-science
+        annotations:
+          summary: "Skew monitoring database connectivity issues"
+          description: |
+            Skew monitoring pushgateway is up but no new metrics are being generated.
+            This may indicate database connectivity issues in the skew monitoring job.
+            Check database connections and query performance.

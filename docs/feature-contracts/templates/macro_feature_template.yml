@@ -1,0 +1,198 @@
+# Macro Feature Contract Template
+# Use this template for macroeconomic indicators (rates, inflation, GDP, employment, etc.)
+
+# REQUIRED: Basic Identification
+feature_name: "example_fed_funds_rate"  # REPLACE: Unique feature identifier
+feature_type: "macro"                   # FIXED: Must be "macro" for this template
+data_source: "macro_data_service"       # REPLACE: Source service/vendor name
+version: "1.0.0"                       # REPLACE: Semantic versioning
+
+# REQUIRED: Point-in-Time Constraints
+as_of_ts_rule: "announcement_time"      # CHOOSE: announcement_time | release_time | market_close
+effective_ts_rule: "effective_date"     # CHOOSE: effective_date | announcement_time | publication_time
+arrival_latency_minutes: 30             # REPLACE: Expected delay (30 min for data processing)
+point_in_time_rule: |                   # REPLACE: Specific PIT constraints
+  Macro data uses official announcement time from central banks/agencies.
+  Effective date reflects when policy changes take effect (may be future).
+  Historical revisions are tracked separately with revision timestamps.
+
+# REQUIRED: Data Quality & SLA
+vendor_sla:
+  availability: 99.8           # REPLACE: High reliability for official data
+  latency_minutes: 30          # REPLACE: Processing time for data ingestion
+  quality: 99.9               # REPLACE: Very high accuracy for official data
+
+revision_policy:
+  revision_frequency: "monthly" # CHOOSE: never | daily | weekly | monthly | quarterly
+  revision_window_days: 365    # REPLACE: Macro data can be revised up to 1 year
+  notification_method: "webhook" # CHOOSE: none | email | webhook | alert
+
+# REQUIRED: Business Logic
+computation_logic: |          # REPLACE: Clear description of calculation
+  Federal Funds Effective Rate (FFER):
+  1. Source: Federal Reserve Board H.15 release
+  2. Represents actual overnight lending rate between banks
+  3. Updated daily when markets are open
+  4. Historical revisions rare but tracked when they occur
+  5. Forward guidance and target range tracked separately
+
+dependencies:                 # REPLACE: List of required features/data
+  - "fomc_meeting_dates"
+  - "fed_target_range"
+  - "treasury_rates"
+
+lookback_period_days: 1825    # REPLACE: 5 years for macro trend analysis
+update_frequency: "daily"     # REPLACE: Updated daily after market close
+
+# REQUIRED: Validation & Monitoring
+validation_rules:
+  valid_range: [0, 25]        # REPLACE: Historical Fed funds range
+  null_handling: "forward_fill" # CHOOSE: reject | forward_fill | interpolate
+  outlier_detection: "custom"  # CHOOSE: 3_sigma | iqr | percentile | custom
+  monitoring_alerts:          # REPLACE: List of alerting conditions
+    - "rate_change_threshold"
+    - "unexpected_announcement"
+    - "data_source_outage"
+    - "historical_revision"
+
+# REQUIRED: Compliance & Audit
+pii_classification: "none"    # CHOOSE: none | masked | anonymized | sensitive
+regulatory_notes: |           # REPLACE: Regulatory considerations
+  Official government/central bank data in public domain.
+  No redistribution restrictions for Fed data.
+  Historical accuracy critical for regulatory reporting.
+  Revision tracking required for audit trails.
+
+audit_trail: "database_logs"  # CHOOSE: git_commits | database_logs | manual
+retention_policy: "permanent" # REPLACE: Permanent retention for macro data
+
+# REQUIRED: Metadata
+created_by: "macro_analyst"              # REPLACE: Creator's identifier
+created_at: "2024-01-15T10:30:00Z"      # REPLACE: ISO 8601 timestamp
+approved_by: "chief_economist"           # REPLACE: Approver's identifier  
+approved_at: "2024-01-15T16:00:00Z"      # REPLACE: ISO 8601 timestamp
+last_modified: "2024-01-15T16:00:00Z"    # Will be auto-updated
+
+# OPTIONAL: Extended Configuration
+feature_config:               # REPLACE: Feature-specific parameters
+  data_frequency: "daily"     # Frequency of underlying data
+  announcement_schedule: "irregular" # FOMC meetings are scheduled
+  revision_tracking: true     # Track all historical revisions
+  forward_guidance: false     # This feature doesn't include guidance
+  seasonal_adjustment: false  # Fed funds not seasonally adjusted
+  real_time_availability: true # Available same day
+
+business_context:             # REPLACE: Business use and interpretation
+  purpose: "Primary monetary policy indicator for interest rate models"
+  interpretation: |
+    Federal funds rate is the key policy rate set by the Federal Reserve.
+    Changes directly impact borrowing costs across the economy.
+    Rising rates typically strengthen USD and pressure equity valuations.
+    Market pricing vs actual rates reveals policy expectations.
+  typical_range: [0.25, 5.0] # Normal policy range
+  extreme_values: [0, 20]    # Historical extremes (1980s had >15%)
+
+performance_expectations:     # REPLACE: Expected behavior characteristics
+  volatility: "low"          # Changes infrequently, small increments
+  correlation_with_markets: -0.6 # Negative correlation with equities
+  signal_frequency: "monthly" # Changes typically monthly at FOMC
+  lag_characteristics: "none" # Immediate market impact
+
+# TESTING: Validation test cases
+test_cases:
+  - name: "standard_rate_update"
+    description: "Normal FOMC rate decision processing"
+    input_data:
+      announcement_time: "2024-01-31T19:00:00Z"
+      new_rate: 5.25
+      previous_rate: 5.00
+      fomc_decision: "increase"
+    expected_output: 5.25
+    tolerance: 0.001
+  
+  - name: "historical_revision"
+    description: "Handle rare historical data revisions"
+    scenarios:
+      - "data_correction_scenario"
+      - "methodology_change"
+      - "retroactive_adjustment"
+  
+  - name: "holiday_weekend_handling"
+    description: "Handle non-business day updates"
+    scenarios:
+      - "weekend_rate_hold"
+      - "federal_holiday_processing"
+      - "emergency_weekend_change"
+
+# MONITORING: Production monitoring configuration
+monitoring_config:
+  alert_thresholds:
+    missing_data_hours: 25     # Alert if no update for >24 hours
+    rate_change_threshold: 0.5 # Alert on large rate changes
+    unexpected_revision: true  # Alert on any historical revision
+    data_quality_score: 0.95  # Alert if quality drops
+  
+  quality_metrics:
+    data_completeness: 100.0   # All business days must have data
+    timeliness_sla: 98.0      # Percentage meeting delivery SLA
+    accuracy_validation: "daily" # Cross-check with Fed website
+  
+  reconciliation:
+    benchmark_sources:         # Sources for validation
+      - "federal_reserve_h15"
+      - "bloomberg_terminal"
+      - "reuters_eikon"
+    tolerance_threshold: 0.001 # Exact match required
+    validation_frequency: "daily"
+
+# MACRO SPECIFIC: Economic data considerations
+macro_config:
+  seasonality:
+    seasonal_adjustment: false # Fed funds not seasonally adjusted
+    holiday_schedule: "federal" # Follows federal holiday calendar
+    business_day_only: true    # No weekend updates
+  
+  revision_handling:
+    revision_window: "5_years" # Track revisions up to 5 years back
+    revision_notification: true # Alert on any revision
+    historical_accuracy: "exact" # Maintain exact historical values
+  
+  announcement_tracking:
+    fomc_meeting_dates: true   # Track FOMC calendar
+    emergency_changes: true    # Track emergency rate changes
+    forward_guidance: false    # This feature doesn't include guidance
+  
+  international_context:
+    currency_impact: "USD"     # Primary currency affected
+    global_spillovers: true    # Track impact on global rates
+    carry_trade_implications: true # Important for FX strategies
+
+# CALENDAR: Important dates and schedules
+calendar_config:
+  fomc_meetings_per_year: 8   # Scheduled FOMC meetings
+  typical_announcement_time: "14:00" # ET announcement time
+  blackout_periods:           # No changes expected during these periods
+    - "december_holiday_week"
+    - "major_market_holidays"
+  
+  historical_patterns:
+    rate_cycle_duration: "2-3_years" # Typical cycle length
+    increment_size: 0.25       # Typical change size (25 bps)
+    emergency_thresholds: "market_stress" # When emergency changes occur
+
+# EXAMPLE VALUES (for documentation)
+example_data:
+  sample_input:
+    timestamp: "2024-01-31T19:00:00Z"
+    announcement_type: "fomc_decision"
+    rate_decision: "hold"
+    previous_rate: 5.25
+  
+  sample_output:
+    timestamp: "2024-01-31T19:00:00Z"
+    fed_funds_rate: 5.25
+    rate_change: 0.00
+    change_direction: "unchanged"
+    days_since_change: 45
+    quality_score: 1.0
+    revision_flag: false

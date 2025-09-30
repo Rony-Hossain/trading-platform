@@ -1,0 +1,242 @@
+{
+  "rsi_14": {
+    "ratio_tolerance": {
+      "min": 0.85,
+      "max": 1.15
+    },
+    "absolute_tolerance": {
+      "max": 5.0
+    },
+    "description": "RSI 14-day technical indicator"
+  },
+  "sma_20": {
+    "ratio_tolerance": {
+      "min": 0.95,
+      "max": 1.05
+    },
+    "absolute_tolerance": {
+      "max": 2.0
+    },
+    "description": "Simple Moving Average 20-day"
+  },
+  "ema_12": {
+    "ratio_tolerance": {
+      "min": 0.95,
+      "max": 1.05
+    },
+    "absolute_tolerance": {
+      "max": 1.5
+    },
+    "description": "Exponential Moving Average 12-day"
+  },
+  "bollinger_upper": {
+    "ratio_tolerance": {
+      "min": 0.90,
+      "max": 1.10
+    },
+    "absolute_tolerance": {
+      "max": 3.0
+    },
+    "description": "Bollinger Bands Upper Band"
+  },
+  "bollinger_lower": {
+    "ratio_tolerance": {
+      "min": 0.90,
+      "max": 1.10
+    },
+    "absolute_tolerance": {
+      "max": 3.0
+    },
+    "description": "Bollinger Bands Lower Band"
+  },
+  "macd_line": {
+    "ratio_tolerance": {
+      "min": 0.80,
+      "max": 1.20
+    },
+    "absolute_tolerance": {
+      "max": 1.0
+    },
+    "description": "MACD Line"
+  },
+  "macd_signal": {
+    "ratio_tolerance": {
+      "min": 0.80,
+      "max": 1.20
+    },
+    "absolute_tolerance": {
+      "max": 1.0
+    },
+    "description": "MACD Signal Line"
+  },
+  "volume_sma_20": {
+    "ratio_tolerance": {
+      "min": 0.70,
+      "max": 1.30
+    },
+    "absolute_tolerance": {
+      "max": 1000000
+    },
+    "description": "Volume Simple Moving Average 20-day"
+  },
+  "price_change_1d": {
+    "ratio_tolerance": {
+      "min": 0.90,
+      "max": 1.10
+    },
+    "absolute_tolerance": {
+      "max": 0.5
+    },
+    "description": "1-day price change percentage"
+  },
+  "volatility_30d": {
+    "ratio_tolerance": {
+      "min": 0.85,
+      "max": 1.15
+    },
+    "absolute_tolerance": {
+      "max": 0.1
+    },
+    "description": "30-day realized volatility"
+  },
+  "sentiment_score": {
+    "ratio_tolerance": {
+      "min": 0.80,
+      "max": 1.20
+    },
+    "absolute_tolerance": {
+      "max": 0.2
+    },
+    "description": "Aggregated sentiment score"
+  },
+  "news_volume": {
+    "ratio_tolerance": {
+      "min": 0.70,
+      "max": 1.30
+    },
+    "absolute_tolerance": {
+      "max": 10
+    },
+    "description": "Daily news article count"
+  },
+  "social_mentions": {
+    "ratio_tolerance": {
+      "min": 0.60,
+      "max": 1.40
+    },
+    "absolute_tolerance": {
+      "max": 50
+    },
+    "description": "Social media mentions count"
+  },
+  "earnings_surprise": {
+    "ratio_tolerance": {
+      "min": 0.95,
+      "max": 1.05
+    },
+    "absolute_tolerance": {
+      "max": 0.1
+    },
+    "description": "Earnings surprise factor"
+  },
+  "pe_ratio": {
+    "ratio_tolerance": {
+      "min": 0.90,
+      "max": 1.10
+    },
+    "absolute_tolerance": {
+      "max": 2.0
+    },
+    "description": "Price-to-Earnings ratio"
+  },
+  "revenue_growth": {
+    "ratio_tolerance": {
+      "min": 0.85,
+      "max": 1.15
+    },
+    "absolute_tolerance": {
+      "max": 0.05
+    },
+    "description": "Revenue growth rate"
+  },
+  "debt_to_equity": {
+    "ratio_tolerance": {
+      "min": 0.90,
+      "max": 1.10
+    },
+    "absolute_tolerance": {
+      "max": 0.2
+    },
+    "description": "Debt-to-Equity ratio"
+  },
+  "return_on_equity": {
+    "ratio_tolerance": {
+      "min": 0.85,
+      "max": 1.15
+    },
+    "absolute_tolerance": {
+      "max": 0.03
+    },
+    "description": "Return on Equity"
+  },
+  "book_value_per_share": {
+    "ratio_tolerance": {
+      "min": 0.95,
+      "max": 1.05
+    },
+    "absolute_tolerance": {
+      "max": 1.0
+    },
+    "description": "Book Value per Share"
+  },
+  "option_iv_30d": {
+    "ratio_tolerance": {
+      "min": 0.80,
+      "max": 1.20
+    },
+    "absolute_tolerance": {
+      "max": 0.1
+    },
+    "description": "30-day implied volatility from options"
+  },
+  "option_volume_ratio": {
+    "ratio_tolerance": {
+      "min": 0.70,
+      "max": 1.30
+    },
+    "absolute_tolerance": {
+      "max": 0.5
+    },
+    "description": "Options volume to stock volume ratio"
+  },
+  "beta_coefficient": {
+    "ratio_tolerance": {
+      "min": 0.90,
+      "max": 1.10
+    },
+    "absolute_tolerance": {
+      "max": 0.1
+    },
+    "description": "Beta coefficient vs market"
+  },
+  "correlation_spy": {
+    "ratio_tolerance": {
+      "min": 0.85,
+      "max": 1.15
+    },
+    "absolute_tolerance": {
+      "max": 0.1
+    },
+    "description": "Correlation with SPY"
+  },
+  "sector_momentum": {
+    "ratio_tolerance": {
+      "min": 0.80,
+      "max": 1.20
+    },
+    "absolute_tolerance": {
+      "max": 0.1
+    },
+    "description": "Sector momentum factor"
+  }
+}

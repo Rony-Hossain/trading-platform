@@ -1,0 +1,197 @@
+# Sentiment Feature Contract Template
+# Use this template for sentiment analysis features (social media, news, earnings call sentiment, etc.)
+
+# REQUIRED: Basic Identification
+feature_name: "example_social_sentiment_score"  # REPLACE: Unique feature identifier
+feature_type: "sentiment"                       # FIXED: Must be "sentiment" for this template
+data_source: "sentiment_service"                # REPLACE: Source service/vendor name
+version: "1.0.0"                               # REPLACE: Semantic versioning
+
+# REQUIRED: Point-in-Time Constraints
+as_of_ts_rule: "event_timestamp"               # CHOOSE: event_timestamp | collection_time | processing_time
+effective_ts_rule: "event_timestamp"           # CHOOSE: event_timestamp | publication_time | collection_time
+arrival_latency_minutes: 15                    # REPLACE: Expected delay (15 min for social data processing)
+point_in_time_rule: |                          # REPLACE: Specific PIT constraints
+  Sentiment data uses the original event timestamp (tweet time, article publication)
+  to ensure proper temporal ordering. Collection and processing delays are tracked
+  separately to maintain point-in-time integrity for trading decisions.
+
+# REQUIRED: Data Quality & SLA
+vendor_sla:
+  availability: 98.5           # REPLACE: Lower due to API rate limits
+  latency_minutes: 15          # REPLACE: Processing time for sentiment analysis
+  quality: 95.0               # REPLACE: Sentiment accuracy expectations
+
+revision_policy:
+  revision_frequency: "never"   # CHOOSE: never | daily | weekly (sentiment rarely revised)
+  revision_window_days: 0      # REPLACE: No revisions for sentiment data
+  notification_method: "none"  # CHOOSE: none | email | webhook | alert
+
+# REQUIRED: Business Logic
+computation_logic: |          # REPLACE: Clear description of sentiment calculation
+  Social Sentiment Score aggregated from multiple sources:
+  1. Collect social media posts (Twitter, Reddit, StockTwits) mentioning ticker
+  2. Apply NLP sentiment analysis (VADER + custom fintech model)
+  3. Weight by source credibility and follower count
+  4. Aggregate into hourly sentiment score [-1.0, +1.0]
+  5. Apply volume-weighted smoothing over 4-hour window
+
+dependencies:                 # REPLACE: List of required features/data
+  - "social_media_posts"
+  - "news_articles"
+  - "follower_counts"
+  - "source_credibility_scores"
+  - "trading_volume"
+
+lookback_period_days: 7       # REPLACE: 1 week for sentiment trending
+update_frequency: "1h"        # REPLACE: Hourly aggregation of sentiment data
+
+# REQUIRED: Validation & Monitoring
+validation_rules:
+  valid_range: [-1.0, 1.0]    # REPLACE: Normalized sentiment range
+  null_handling: "forward_fill" # CHOOSE: reject | forward_fill | interpolate
+  outlier_detection: "percentile" # CHOOSE: 3_sigma | iqr | percentile | custom
+  monitoring_alerts:          # REPLACE: List of alerting conditions
+    - "extreme_sentiment_spikes"
+    - "data_source_outages"
+    - "sentiment_model_drift"
+    - "volume_sentiment_divergence"
+
+# REQUIRED: Compliance & Audit
+pii_classification: "masked"  # CHOOSE: none | masked | anonymized | sensitive
+regulatory_notes: |           # REPLACE: Regulatory considerations
+  Social media data is anonymized and aggregated to protect user privacy.
+  No individual posts or usernames are stored in production systems.
+  Complies with platform ToS and GDPR requirements for data processing.
+  Content filtering removes potential market manipulation attempts.
+
+audit_trail: "database_logs"  # CHOOSE: git_commits | database_logs | manual
+retention_policy: "2_years"   # REPLACE: Shorter retention for sentiment data
+
+# REQUIRED: Metadata
+created_by: "nlp_engineer"               # REPLACE: Creator's identifier
+created_at: "2024-01-15T10:30:00Z"      # REPLACE: ISO 8601 timestamp
+approved_by: "data_scientist"            # REPLACE: Approver's identifier  
+approved_at: "2024-01-15T16:00:00Z"      # REPLACE: ISO 8601 timestamp
+last_modified: "2024-01-15T16:00:00Z"    # Will be auto-updated
+
+# OPTIONAL: Extended Configuration
+feature_config:               # REPLACE: Feature-specific parameters
+  sentiment_models:           # NLP models used
+    - "vader_sentiment"
+    - "finbert_fintech"
+    - "custom_social_model"
+  source_weights:             # Weighting by source type
+    twitter: 0.4
+    reddit: 0.3
+    stocktwits: 0.2
+    news: 0.1
+  credibility_threshold: 0.3  # Minimum credibility score to include
+  volume_smoothing_window: 4  # Hours for volume-weighted smoothing
+  spam_filtering: true        # Enable spam/bot detection
+
+business_context:             # REPLACE: Business use and interpretation
+  purpose: "Market sentiment gauge for contrarian and momentum strategies"
+  interpretation: |
+    Positive values indicate bullish sentiment, negative values bearish.
+    Extreme values (>0.8 or <-0.8) may signal contrarian opportunities.
+    Rapid sentiment changes often precede volatility spikes.
+    Best used in combination with technical and fundamental signals.
+  typical_range: [-0.5, 0.5]  # Normal sentiment range
+  extreme_values: [-0.9, 0.9] # Extreme but potentially valid
+
+performance_expectations:     # REPLACE: Expected behavior characteristics
+  volatility: "high"          # Sentiment changes rapidly
+  correlation_with_price: 0.15 # Weak but meaningful correlation
+  signal_frequency: "hourly"  # Updated every hour
+  lag_characteristics: "leading" # Often leads price movements
+
+# TESTING: Validation test cases
+test_cases:
+  - name: "standard_aggregation"
+    description: "Normal sentiment calculation with mixed sources"
+    input_data:
+      twitter_posts: 150
+      reddit_posts: 25
+      stocktwits_posts: 75
+      avg_sentiment: 0.35
+      credibility_weighted: true
+    expected_output: 0.32      # Volume and credibility weighted
+    tolerance: 0.05
+  
+  - name: "extreme_sentiment_handling"
+    description: "Handle extreme sentiment events"
+    scenarios:
+      - "viral_negative_news"
+      - "pump_and_dump_detection"
+      - "earnings_surprise_reaction"
+  
+  - name: "data_quality_filtering"
+    description: "Test spam and bot filtering"
+    scenarios:
+      - "bot_sentiment_manipulation"
+      - "low_credibility_sources"
+      - "duplicate_content_filtering"
+
+# MONITORING: Production monitoring configuration
+monitoring_config:
+  alert_thresholds:
+    missing_data_hours: 2      # Alert if no data for 2 hours
+    extreme_sentiment_threshold: 0.85 # Alert on extreme sentiment
+    source_outage_percentage: 30 # Alert if >30% of sources down
+    model_confidence_drop: 0.7  # Alert if confidence < 70%
+  
+  quality_metrics:
+    data_completeness: 90.0    # Target percentage of expected posts
+    sentiment_accuracy: 85.0   # Validated against human labeling
+    timeliness_sla: 90.0      # Percentage meeting delivery SLA
+  
+  reconciliation:
+    benchmark_sources:         # Sources for validation
+      - "manual_sentiment_labels"
+      - "market_reaction_correlation"
+    validation_frequency: "weekly"
+    human_validation_sample: 100 # Posts manually validated weekly
+
+# SENTIMENT SPECIFIC: Social media and NLP considerations
+sentiment_config:
+  language_support:
+    primary: "english"
+    secondary: ["spanish", "portuguese"] # For international markets
+  
+  content_filtering:
+    min_relevance_score: 0.6   # Minimum relevance to ticker/company
+    spam_detection: true       # Enable automated spam filtering
+    bot_detection: true        # Filter out bot accounts
+    profanity_filtering: false # Keep for authentic sentiment
+  
+  model_ensemble:
+    voting_strategy: "weighted_average" # How to combine model outputs
+    confidence_weighting: true # Weight by model confidence
+    model_disagreement_threshold: 0.3 # Flag when models disagree
+  
+  temporal_dynamics:
+    sentiment_momentum: true   # Track sentiment change velocity
+    volatility_adjustment: true # Adjust for market volatility
+    weekend_decay: 0.8        # Decay factor for weekend sentiment
+
+# EXAMPLE VALUES (for documentation)
+example_data:
+  sample_input:
+    timestamp: "2024-01-15T14:30:00Z"
+    symbol: "AAPL"
+    post_count: 245
+    sources: ["twitter", "reddit", "stocktwits"]
+    raw_sentiment: 0.42
+  
+  sample_output:
+    timestamp: "2024-01-15T14:30:00Z"
+    sentiment_score: 0.38
+    confidence: 0.87
+    post_volume: 245
+    source_breakdown: {
+      "twitter": 0.35,
+      "reddit": 0.41,
+      "stocktwits": 0.39
+    }
+    quality_score: 0.91

@@ -1,300 +1,552 @@
 """
-Tests for Feature Contract Validator
+Comprehensive tests for Feature Contract Validator and PIT Compliance
 
-Tests PIT contract validation, enforcement, and compliance checking.
-Ensures data lineage integrity and prevents look-ahead bias.
+This test suite validates all aspects of the feature contract system including:
+- Contract validation and registration
+- PIT compliance checking
+- Temporal consistency validation
+- CI/CD integration
+- Error handling and edge cases
 """
 
 import pytest
-import tempfile
-import yaml
-from datetime import datetime, timedelta
-from pathlib import Path
-import sys
+import json
 import os
+import tempfile
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from unittest.mock import patch, MagicMock
+import sys
 
-# Add project root to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+# Add services to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'services', 'analysis-service', 'app'))
 
-# Add services/analysis-service to path
-analysis_service_path = project_root / 'services' / 'analysis-service'
-sys.path.insert(0, str(analysis_service_path))
-
-from app.core.feature_contracts import (
-    FeatureContractValidator, FeatureContract, FeatureType, PIIClassification,
-    VendorSLA, RevisionPolicy, ValidationRules, ContractViolation, ValidationSeverity
+from core.feature_contracts import (
+    FeatureContractValidator, 
+    FeatureContract,
+    VendorSLA,
+    RevisionPolicy,
+    ViolationType, 
+    PITViolation,
+    PitComplianceError,
+    PITRuleType,
+    get_validator,
+    enforce_pit_compliance
 )
 
-@pytest.fixture
-def temp_contracts_dir():
-    """Create temporary directory with test contracts"""
-    with tempfile.TemporaryDirectory() as temp_dir:
-        contracts_dir = Path(temp_dir)
-        
-        # Create valid contract
-        valid_contract = {
-            'feature_name': 'vix_close',
-            'feature_type': 'macro',
-            'data_source': 'yahoo',
-            'version': '1.0.0',
-            'as_of_ts_rule': 'T+1 09:30 ET',
-            'effective_ts_rule': 'T 16:00 ET',
-            'arrival_latency_minutes': 1050,  # 17.5 hours
-            'point_in_time_rule': 'No access to T+0 VIX close until T+1 market open',
-            'vendor_sla': {
-                'availability': 99.9,
-                'latency_minutes': 15,
-                'quality': 99.99
-            },
-            'revision_policy': {
-                'revision_frequency': 'never',
-                'revision_window_days': 0,
-                'notification_method': 'none'
-            },
-            'computation_logic': 'Direct feed from CBOE via Yahoo Finance',
-            'dependencies': [],
-            'lookback_period_days': 365,
-            'update_frequency': 'daily',
-            'validation_rules': {
-                'valid_range': [5.0, 80.0],
-                'null_handling': 'forward_fill',
-                'outlier_detection': '3_sigma_rolling_30d',
-                'monitoring_alerts': ['null_for_2_days', 'outside_range']
-            },
-            'pii_classification': 'none',
-            'regulatory_notes': 'Public market data',
-            'audit_trail': 'git_commits',
-            'retention_policy': '7_years',
-            'created_by': 'test_user',
-            'approved_by': 'test_approver'
-        }
-        
-        # Save valid contract
-        with open(contracts_dir / 'vix_close.yml', 'w') as f:
-            yaml.dump(valid_contract, f)
-            
-        # Create invalid contract (missing required fields)
-        invalid_contract = {
-            'feature_name': 'broken_feature',
-            'feature_type': 'technical',
-            # Missing required fields intentionally
-        }
-        
-        with open(contracts_dir / 'broken_feature.yml', 'w') as f:
-            yaml.dump(invalid_contract, f)
-            
-        yield str(contracts_dir)
 
-@pytest.fixture
-def validator(temp_contracts_dir):
-    """Create validator with test contracts"""
-    return FeatureContractValidator(temp_contracts_dir)
+class TestVendorSLA:
+    """Test VendorSLA model validation"""
+    
+    def test_valid_vendor_sla(self):
+        """Test creating a valid VendorSLA"""
+        sla = VendorSLA(
+            availability_pct=99.9,
+            max_latency_seconds=300,
+            update_frequency="1min",
+            backfill_policy="24h_window",
+            quality_guarantee="99.95%"
+        )
+        assert sla.availability_pct == 99.9
+        assert sla.max_latency_seconds == 300
+    
+    def test_invalid_availability_percentage(self):
+        """Test VendorSLA with invalid availability percentage"""
+        with pytest.raises(ValueError, match="Availability must be between 0.0 and 100.0"):
+            VendorSLA(
+                availability_pct=101.0,
+                max_latency_seconds=300,
+                update_frequency="1min",
+                backfill_policy="24h_window",
+                quality_guarantee="99.95%"
+            )
+    
+    def test_negative_latency(self):
+        """Test VendorSLA with negative latency"""
+        with pytest.raises(ValueError):
+            VendorSLA(
+                availability_pct=99.9,
+                max_latency_seconds=-10,
+                update_frequency="1min",
+                backfill_policy="24h_window",
+                quality_guarantee="99.95%"
+            )
+
+
+class TestRevisionPolicy:
+    """Test RevisionPolicy model validation"""
+    
+    def test_valid_revision_policy(self):
+        """Test creating a valid RevisionPolicy"""
+        policy = RevisionPolicy(
+            allows_revisions=True,
+            revision_window_hours=24,
+            revision_notification="immediate",
+            backfill_on_revision=True,
+            version_tracking=True
+        )
+        assert policy.allows_revisions is True
+        assert policy.revision_window_hours == 24
+    
+    def test_negative_revision_window(self):
+        """Test RevisionPolicy with negative revision window"""
+        with pytest.raises(ValueError):
+            RevisionPolicy(
+                allows_revisions=True,
+                revision_window_hours=-5,
+                revision_notification="immediate",
+                backfill_on_revision=True,
+                version_tracking=True
+            )
+
+
+class TestFeatureContract:
+    """Test FeatureContract model validation"""
+    
+    @pytest.fixture
+    def valid_contract_data(self):
+        """Fixture providing valid contract data"""
+        return {
+            "feature_id": "aapl_close_price_1min",
+            "feature_name": "Apple Inc. 1-Minute Close Price",
+            "data_source": "bloomberg_api",
+            "feature_type": "price",
+            "granularity": "1min",
+            "currency": "USD",
+            "unit": "dollars",
+            "as_of_ts": "2024-01-15T09:30:00.000Z",
+            "effective_ts": "2024-01-15T09:35:00.000Z",
+            "arrival_latency": 300,
+            "point_in_time_rule": "strict",
+            "vendor_SLA": {
+                "availability_pct": 99.9,
+                "max_latency_seconds": 300,
+                "update_frequency": "1min",
+                "backfill_policy": "24h_window",
+                "quality_guarantee": "99.95%"
+            },
+            "revision_policy": {
+                "allows_revisions": False,
+                "revision_window_hours": 0,
+                "revision_notification": "none",
+                "backfill_on_revision": False,
+                "version_tracking": True
+            },
+            "contract_version": "1.0.0",
+            "created_by": "quant.team@company.com",
+            "approved_by": "risk.manager@company.com",
+            "approval_date": "2024-01-15T14:30:00.000Z",
+            "tags": ["equity", "price", "real_time", "core", "aapl"],
+            "dependencies": []
+        }
+    
+    def test_valid_contract_creation(self, valid_contract_data):
+        """Test creating a valid FeatureContract"""
+        contract = FeatureContract(**valid_contract_data)
+        assert contract.feature_id == "aapl_close_price_1min"
+        assert contract.feature_type == "price"
+        assert contract.point_in_time_rule == PITRuleType.STRICT
+    
+    def test_invalid_feature_id_pattern(self, valid_contract_data):
+        """Test contract with invalid feature_id pattern"""
+        valid_contract_data["feature_id"] = "Invalid-Feature-ID"
+        with pytest.raises(ValueError):
+            FeatureContract(**valid_contract_data)
+    
+    def test_invalid_feature_type(self, valid_contract_data):
+        """Test contract with invalid feature type"""
+        valid_contract_data["feature_type"] = "invalid_type"
+        with pytest.raises(ValueError, match="Feature type must be one of"):
+            FeatureContract(**valid_contract_data)
+    
+    def test_invalid_contract_version(self, valid_contract_data):
+        """Test contract with invalid version format"""
+        valid_contract_data["contract_version"] = "invalid_version"
+        with pytest.raises(ValueError):
+            FeatureContract(**valid_contract_data)
+    
+    def test_invalid_timestamp_format(self, valid_contract_data):
+        """Test contract with invalid timestamp format"""
+        valid_contract_data["as_of_ts"] = "invalid_timestamp"
+        with pytest.raises(ValueError, match="Timestamp must be valid ISO 8601 format"):
+            FeatureContract(**valid_contract_data)
+    
+    def test_temporal_consistency_validation(self, valid_contract_data):
+        """Test temporal consistency validation"""
+        contract = FeatureContract(**valid_contract_data)
+        violations = contract.validate_temporal_consistency()
+        assert len(violations) == 0  # Should be consistent
+        
+        # Test violation case
+        valid_contract_data["effective_ts"] = "2024-01-15T09:25:00.000Z"  # Before as_of_ts
+        contract = FeatureContract(**valid_contract_data)
+        violations = contract.validate_temporal_consistency()
+        assert len(violations) > 0
+        assert "as_of_ts must be <= effective_ts" in violations[0]
+
 
 class TestFeatureContractValidator:
-    """Test feature contract validation"""
+    """Test FeatureContractValidator functionality"""
     
-    def test_load_valid_contracts(self, validator):
-        """Test loading valid contracts"""
-        assert 'vix_close' in validator.contracts
-        
-        contract = validator.contracts['vix_close']
-        assert contract.feature_name == 'vix_close'
-        assert contract.feature_type == FeatureType.MACRO
-        assert contract.arrival_latency_minutes == 1050
-        assert contract.pii_classification == PIIClassification.NONE
-        
-    def test_missing_contract_detection(self, validator):
-        """Test detection of missing contracts"""
-        feature_list = ['vix_close', 'spy_price', 'unknown_feature']
-        missing = validator.get_missing_contracts(feature_list)
-        
-        assert 'vix_close' not in missing
-        assert 'spy_price' in missing
-        assert 'unknown_feature' in missing
-        
-    def test_pit_usage_validation_success(self, validator):
-        """Test successful PIT usage validation"""
-        # Valid usage: sufficient latency
-        usage_time = datetime(2024, 1, 2, 10, 0)  # Next day, 10 AM
-        data_time = datetime(2024, 1, 1, 16, 0)   # Previous day, 4 PM
-        
-        violations = validator.validate_feature_usage(
-            'vix_close', usage_time, data_time
-        )
-        
-        assert len(violations) == 0
-        
-    def test_pit_usage_validation_failure(self, validator):
-        """Test PIT usage validation failure"""
-        # Invalid usage: insufficient latency
-        usage_time = datetime(2024, 1, 1, 18, 0)  # Same day, 6 PM
-        data_time = datetime(2024, 1, 1, 16, 0)   # Same day, 4 PM
-        
-        violations = validator.validate_feature_usage(
-            'vix_close', usage_time, data_time
-        )
-        
-        assert len(violations) == 1
-        assert violations[0].violation_type == 'insufficient_latency'
-        assert violations[0].severity == ValidationSeverity.HIGH
-        
-    def test_missing_contract_violation(self, validator):
-        """Test violation for missing contract"""
-        violations = validator.validate_feature_usage(
-            'nonexistent_feature', datetime.now(), datetime.now()
-        )
-        
-        assert len(violations) == 1
-        assert violations[0].violation_type == 'missing_contract'
-        assert violations[0].severity == ValidationSeverity.CRITICAL
-        
-    def test_value_validation_success(self, validator):
-        """Test successful value validation"""
-        violations = validator.validate_feature_value('vix_close', 15.5)
-        assert len(violations) == 0
-        
-    def test_value_validation_out_of_range(self, validator):
-        """Test value validation for out-of-range values"""
-        violations = validator.validate_feature_value('vix_close', 100.0)
-        
-        assert len(violations) == 1
-        assert violations[0].violation_type == 'value_out_of_range'
-        assert violations[0].severity == ValidationSeverity.MEDIUM
-        
-    def test_null_value_handling(self, validator):
-        """Test null value handling based on contract rules"""
-        # First modify contract to reject nulls
-        contract = validator.contracts['vix_close']
-        contract.validation_rules.null_handling = 'reject'
-        
-        violations = validator.validate_feature_value('vix_close', None)
-        
-        assert len(violations) == 1
-        assert violations[0].violation_type == 'null_value_rejected'
-        
-    def test_pit_compliance_enforcement(self, validator):
-        """Test PIT compliance enforcement"""
-        # Test market open rule enforcement
-        market_day = datetime(2024, 1, 2, 8, 0)  # Before market open
-        
-        # Should fail enforcement
-        result = validator.enforce_pit_compliance('vix_close', market_day)
-        assert result == False
-        
-        # After market open should pass
-        market_open = datetime(2024, 1, 2, 10, 0)
-        result = validator.enforce_pit_compliance('vix_close', market_open)
-        assert result == True
-        
-    def test_audit_report_generation(self, validator):
-        """Test audit report generation"""
-        report = validator.generate_audit_report()
-        
-        assert 'timestamp' in report
-        assert 'total_contracts' in report
-        assert 'contracts_by_type' in report
-        assert 'contracts_by_source' in report
-        assert 'compliance_summary' in report
-        assert 'contracts' in report
-        
-        assert report['total_contracts'] == len(validator.contracts)
-        assert len(report['contracts']) == len(validator.contracts)
-        
-        # Check contract data
-        vix_contract_data = next(
-            c for c in report['contracts'] 
-            if c['feature_name'] == 'vix_close'
-        )
-        assert vix_contract_data['feature_type'] == 'macro'
-        assert vix_contract_data['data_source'] == 'yahoo'
-
-class TestContractViolation:
-    """Test contract violation handling"""
+    @pytest.fixture
+    def validator(self):
+        """Create a validator for testing"""
+        return FeatureContractValidator(enforce_pit_compliance=True)
     
-    def test_violation_creation(self):
-        """Test creating contract violations"""
-        violation = ContractViolation(
-            feature_name='test_feature',
-            violation_type='test_violation',
-            severity=ValidationSeverity.HIGH,
-            message='Test violation message',
-            actual_value=10,
-            expected_value=5
-        )
-        
-        assert violation.feature_name == 'test_feature'
-        assert violation.severity == ValidationSeverity.HIGH
-        assert violation.actual_value == 10
-        assert violation.expected_value == 5
-        assert isinstance(violation.timestamp, datetime)
-
-class TestContractIntegration:
-    """Test integration scenarios"""
+    @pytest.fixture
+    def valid_contract_data(self):
+        """Fixture providing valid contract data"""
+        return {
+            "feature_id": "test_feature_1min",
+            "feature_name": "Test Feature 1-Minute",
+            "data_source": "test_provider",
+            "feature_type": "price",
+            "granularity": "1min",
+            "as_of_ts": "2024-01-15T09:30:00.000Z",
+            "effective_ts": "2024-01-15T09:35:00.000Z",
+            "arrival_latency": 300,
+            "point_in_time_rule": "strict",
+            "vendor_SLA": {
+                "availability_pct": 99.5,
+                "max_latency_seconds": 300,
+                "update_frequency": "1min",
+                "backfill_policy": "24h_window",
+                "quality_guarantee": "99.9%"
+            },
+            "revision_policy": {
+                "allows_revisions": False,
+                "revision_window_hours": 0,
+                "revision_notification": "none",
+                "backfill_on_revision": False,
+                "version_tracking": True
+            },
+            "contract_version": "1.0.0",
+            "created_by": "test@company.com"
+        }
     
-    def test_end_to_end_validation(self, validator):
-        """Test complete validation workflow"""
-        # Simulate feature usage
-        feature_name = 'vix_close'
-        usage_time = datetime(2024, 1, 2, 10, 0)
-        data_time = datetime(2024, 1, 1, 16, 0)
-        feature_value = 18.5
+    def test_contract_registration_success(self, validator, valid_contract_data):
+        """Test successful contract registration"""
+        result = validator.register_contract(valid_contract_data)
+        assert result is True
         
-        # Validate usage timing
-        usage_violations = validator.validate_feature_usage(
-            feature_name, usage_time, data_time
+        contract = validator.get_contract("test_feature_1min")
+        assert contract is not None
+        assert contract.feature_id == "test_feature_1min"
+        assert contract.pit_audit_status == "compliant"
+    
+    def test_contract_registration_failure_missing_fields(self, validator):
+        """Test contract registration failure with missing fields"""
+        incomplete_data = {
+            "feature_id": "incomplete_feature",
+            "feature_name": "Incomplete Feature"
+            # Missing required fields
+        }
+        
+        with pytest.raises(PitComplianceError):
+            validator.register_contract(incomplete_data)
+    
+    def test_contract_registration_temporal_violation(self, validator, valid_contract_data):
+        """Test contract registration with temporal consistency violation"""
+        # Make effective_ts before as_of_ts
+        valid_contract_data["effective_ts"] = "2024-01-15T09:25:00.000Z"
+        
+        with pytest.raises(PitComplianceError):
+            validator.register_contract(valid_contract_data)
+    
+    def test_pit_compliance_check_no_contract(self, validator):
+        """Test PIT compliance check for feature without contract"""
+        feature_data = {
+            "as_of_timestamp": "2024-01-15T09:30:00.000Z",
+            "effective_timestamp": "2024-01-15T09:35:00.000Z",
+            "value": 150.25
+        }
+        
+        violations = validator.check_pit_compliance("nonexistent_feature", feature_data)
+        assert len(violations) == 1
+        assert violations[0].violation_type == ViolationType.CRITICAL
+        assert "No contract found" in violations[0].description
+    
+    def test_pit_compliance_check_missing_timestamps(self, validator, valid_contract_data):
+        """Test PIT compliance check with missing timestamps"""
+        validator.register_contract(valid_contract_data)
+        
+        feature_data = {
+            "value": 150.25
+            # Missing required timestamps
+        }
+        
+        violations = validator.check_pit_compliance("test_feature_1min", feature_data)
+        assert len(violations) == 1
+        assert violations[0].violation_type == ViolationType.HIGH
+        assert "Missing required timestamps" in violations[0].description
+    
+    def test_pit_compliance_check_future_data_access(self, validator, valid_contract_data):
+        """Test PIT compliance check with future data access violation"""
+        validator.register_contract(valid_contract_data)
+        
+        feature_data = {
+            "as_of_timestamp": "2024-01-15T09:30:00.000Z",
+            "effective_timestamp": "2024-01-15T09:35:00.000Z",
+            "prediction_timestamp": "2024-01-15T09:25:00.000Z",  # Before as_of_ts
+            "value": 150.25
+        }
+        
+        violations = validator.check_pit_compliance("test_feature_1min", feature_data)
+        assert len(violations) >= 1
+        critical_violations = [v for v in violations if v.violation_type == ViolationType.CRITICAL]
+        assert len(critical_violations) == 1
+        assert "Future data access" in critical_violations[0].description
+    
+    def test_pit_compliance_check_feature_not_available(self, validator, valid_contract_data):
+        """Test PIT compliance check with feature not yet available"""
+        validator.register_contract(valid_contract_data)
+        
+        feature_data = {
+            "as_of_timestamp": "2024-01-15T09:30:00.000Z",
+            "effective_timestamp": "2024-01-15T09:35:00.000Z",
+            "prediction_timestamp": "2024-01-15T09:32:00.000Z",  # Before effective_ts
+            "value": 150.25
+        }
+        
+        violations = validator.check_pit_compliance("test_feature_1min", feature_data)
+        assert len(violations) >= 1
+        high_violations = [v for v in violations if v.violation_type == ViolationType.HIGH]
+        assert len(high_violations) == 1
+        assert "Feature not yet available" in high_violations[0].description
+    
+    def test_pit_compliance_check_valid(self, validator, valid_contract_data):
+        """Test PIT compliance check with valid data"""
+        validator.register_contract(valid_contract_data)
+        
+        feature_data = {
+            "as_of_timestamp": "2024-01-15T09:30:00.000Z",
+            "effective_timestamp": "2024-01-15T09:35:00.000Z",
+            "prediction_timestamp": "2024-01-15T09:40:00.000Z",  # After effective_ts
+            "value": 150.25
+        }
+        
+        violations = validator.check_pit_compliance("test_feature_1min", feature_data)
+        # Should have no critical or high violations
+        critical_high_violations = [v for v in violations 
+                                  if v.violation_type in [ViolationType.CRITICAL, ViolationType.HIGH]]
+        assert len(critical_high_violations) == 0
+    
+    def test_audit_feature_set(self, validator, valid_contract_data):
+        """Test auditing a complete feature set"""
+        validator.register_contract(valid_contract_data)
+        
+        # Register second contract
+        valid_contract_data["feature_id"] = "test_feature_2min"
+        valid_contract_data["granularity"] = "2min"
+        validator.register_contract(valid_contract_data)
+        
+        features = {
+            "test_feature_1min": {
+                "as_of_timestamp": "2024-01-15T09:30:00.000Z",
+                "effective_timestamp": "2024-01-15T09:35:00.000Z",
+                "value": 150.25
+            },
+            "test_feature_2min": {
+                "as_of_timestamp": "2024-01-15T09:30:00.000Z",
+                "effective_timestamp": "2024-01-15T09:35:00.000Z",
+                "value": 75.50
+            }
+        }
+        
+        violations = validator.audit_feature_set(
+            features, 
+            prediction_timestamp="2024-01-15T09:40:00.000Z"
         )
         
-        # Validate feature value
-        value_violations = validator.validate_feature_value(
-            feature_name, feature_value
-        )
+        # Should have no critical violations
+        critical_violations = [v for v in violations if v.violation_type == ViolationType.CRITICAL]
+        assert len(critical_violations) == 0
+    
+    def test_compliance_report_generation(self, validator, valid_contract_data):
+        """Test compliance report generation"""
+        validator.register_contract(valid_contract_data)
         
-        # Should have no violations
-        all_violations = usage_violations + value_violations
-        assert len(all_violations) == 0
+        report = validator.get_compliance_report()
         
-        # Enforce PIT compliance
-        compliance_ok = validator.enforce_pit_compliance(
-            feature_name, usage_time
-        )
-        assert compliance_ok == True
-        
-    def test_violation_aggregation(self, validator):
-        """Test aggregating multiple violations"""
-        violations = []
-        
-        # Multiple validation scenarios
-        test_cases = [
-            ('vix_close', datetime(2024, 1, 1, 17, 0), datetime(2024, 1, 1, 16, 0), 18.5),  # Too soon
-            ('vix_close', datetime(2024, 1, 2, 10, 0), datetime(2024, 1, 1, 16, 0), 100.0),  # Out of range
-            ('missing_feature', datetime.now(), datetime.now(), 10.0),  # Missing contract
-        ]
-        
-        for feature, usage_time, data_time, value in test_cases:
-            violations.extend(validator.validate_feature_usage(feature, usage_time, data_time))
-            violations.extend(validator.validate_feature_value(feature, value))
+        assert report["total_contracts"] == 1
+        assert report["compliant_contracts"] == 1
+        assert report["compliance_rate"] == 1.0
+        assert report["enforcement_enabled"] is True
+        assert "last_audit_time" in report
+    
+    def test_contract_directory_loading(self, validator):
+        """Test loading contracts from directory"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Create test contract files
+            contract1 = {
+                "feature_id": "dir_test_feature1",
+                "feature_name": "Directory Test Feature 1",
+                "data_source": "test_provider",
+                "feature_type": "price",
+                "granularity": "1min",
+                "as_of_ts": "2024-01-15T09:30:00.000Z",
+                "effective_ts": "2024-01-15T09:35:00.000Z",
+                "arrival_latency": 300,
+                "point_in_time_rule": "strict",
+                "vendor_SLA": {
+                    "availability_pct": 99.5,
+                    "max_latency_seconds": 300,
+                    "update_frequency": "1min",
+                    "backfill_policy": "24h_window",
+                    "quality_guarantee": "99.9%"
+                },
+                "revision_policy": {
+                    "allows_revisions": False,
+                    "revision_window_hours": 0,
+                    "revision_notification": "none",
+                    "backfill_on_revision": False,
+                    "version_tracking": True
+                },
+                "contract_version": "1.0.0",
+                "created_by": "test@company.com"
+            }
             
-        # Should have multiple violations
-        assert len(violations) >= 3
-        
-        # Check violation types
-        violation_types = [v.violation_type for v in violations]
-        assert 'insufficient_latency' in violation_types
-        assert 'value_out_of_range' in violation_types
-        assert 'missing_contract' in violation_types
-
-def test_environment_variable_enforcement():
-    """Test environment variable for enforcement"""
-    # Test with enforcement disabled
-    os.environ['PIT_CONTRACTS_ENFORCE'] = 'false'
-    from app.core.feature_contracts import PIT_CONTRACTS_ENFORCE
-    # Note: This will reflect the value when module was imported
+            contract_file = Path(temp_dir) / "test_contract1.json"
+            with open(contract_file, 'w') as f:
+                json.dump(contract1, f)
+            
+            # Load contracts
+            loaded_count = validator.load_contracts_from_directory(temp_dir)
+            assert loaded_count == 1
+            assert validator.get_contract("dir_test_feature1") is not None
     
-    # Test with enforcement enabled
-    os.environ['PIT_CONTRACTS_ENFORCE'] = 'true'
-    # Would need to reload module to test this properly
+    def test_contract_saving(self, validator, valid_contract_data):
+        """Test saving contract to file"""
+        validator.register_contract(valid_contract_data)
+        
+        with tempfile.TemporaryDirectory() as temp_dir:
+            success = validator.save_contract("test_feature_1min", temp_dir)
+            assert success is True
+            
+            contract_file = Path(temp_dir) / "test_feature_1min.json"
+            assert contract_file.exists()
+            
+            # Verify saved content
+            with open(contract_file, 'r') as f:
+                saved_data = json.load(f)
+            assert saved_data["feature_id"] == "test_feature_1min"
 
-if __name__ == '__main__':
-    # Run tests with pytest
-    pytest.main([__file__, '-v'])
+
+class TestPITComplianceIntegration:
+    """Test PIT compliance integration scenarios"""
+    
+    def test_environment_variable_enforcement(self):
+        """Test PIT enforcement based on environment variables"""
+        # Test with environment variable set to true
+        with patch.dict(os.environ, {'PIT_CONTRACTS_ENFORCE': 'true'}):
+            validator = FeatureContractValidator()
+            assert validator.enforce_pit_compliance is True
+        
+        # Test with environment variable set to false
+        with patch.dict(os.environ, {'PIT_CONTRACTS_ENFORCE': 'false'}):
+            validator = FeatureContractValidator()
+            assert validator.enforce_pit_compliance is False
+    
+    def test_global_validator_instance(self):
+        """Test global validator instance functionality"""
+        validator1 = get_validator()
+        validator2 = get_validator()
+        
+        # Should return the same instance
+        assert validator1 is validator2
+    
+    def test_enforce_pit_compliance_function(self):
+        """Test enforce_pit_compliance utility function"""
+        with patch.dict(os.environ, {'PIT_CONTRACTS_ENFORCE': 'true'}):
+            assert enforce_pit_compliance() is True
+        
+        with patch.dict(os.environ, {'PIT_CONTRACTS_ENFORCE': 'false'}):
+            # Create new validator to pick up env change
+            from core.feature_contracts import _global_validator
+            if '_global_validator' in globals():
+                del globals()['_global_validator']
+            assert enforce_pit_compliance() is False
+
+
+class TestErrorHandling:
+    """Test error handling and edge cases"""
+    
+    def test_contract_with_malformed_json_schema(self):
+        """Test contract validation with malformed data"""
+        validator = FeatureContractValidator(enforce_pit_compliance=True)
+        
+        malformed_data = {
+            "feature_id": "malformed_feature",
+            "vendor_SLA": "not_an_object"  # Should be object
+        }
+        
+        with pytest.raises(PitComplianceError):
+            validator.register_contract(malformed_data)
+    
+    def test_timestamp_parsing_errors(self):
+        """Test handling of timestamp parsing errors"""
+        validator = FeatureContractValidator(enforce_pit_compliance=True)
+        
+        # Register a valid contract first
+        valid_contract = {
+            "feature_id": "timestamp_test_feature",
+            "feature_name": "Timestamp Test Feature",
+            "data_source": "test_provider",
+            "feature_type": "price",
+            "granularity": "1min",
+            "as_of_ts": "2024-01-15T09:30:00.000Z",
+            "effective_ts": "2024-01-15T09:35:00.000Z",
+            "arrival_latency": 300,
+            "point_in_time_rule": "strict",
+            "vendor_SLA": {
+                "availability_pct": 99.5,
+                "max_latency_seconds": 300,
+                "update_frequency": "1min",
+                "backfill_policy": "24h_window",
+                "quality_guarantee": "99.9%"
+            },
+            "revision_policy": {
+                "allows_revisions": False,
+                "revision_window_hours": 0,
+                "revision_notification": "none",
+                "backfill_on_revision": False,
+                "version_tracking": True
+            },
+            "contract_version": "1.0.0",
+            "created_by": "test@company.com"
+        }
+        
+        validator.register_contract(valid_contract)
+        
+        # Test with malformed timestamps
+        feature_data = {
+            "as_of_timestamp": "invalid_timestamp",
+            "effective_timestamp": "2024-01-15T09:35:00.000Z",
+            "prediction_timestamp": "2024-01-15T09:40:00.000Z",
+            "value": 150.25
+        }
+        
+        violations = validator.check_pit_compliance("timestamp_test_feature", feature_data)
+        assert len(violations) >= 1
+        timestamp_error_violations = [v for v in violations if "Timestamp validation error" in v.description]
+        assert len(timestamp_error_violations) >= 1
+    
+    def test_nonexistent_contract_file_loading(self):
+        """Test loading contracts from nonexistent directory"""
+        validator = FeatureContractValidator()
+        
+        loaded_count = validator.load_contracts_from_directory("/nonexistent/directory")
+        assert loaded_count == 0
+    
+    def test_contract_saving_failure(self):
+        """Test contract saving failure scenarios"""
+        validator = FeatureContractValidator()
+        
+        # Try to save nonexistent contract
+        success = validator.save_contract("nonexistent_feature", "/tmp")
+        assert success is False
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+

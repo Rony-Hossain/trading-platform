@@ -1,0 +1,343 @@
+name: Point-in-Time (PIT) Enforcement
+
+on:
+  schedule:
+    # Run PIT enforcement every hour
+    - cron: '0 * * * *'
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'services/*/app/**'
+      - 'tools/pit_enforcement_pipeline.py'
+      - 'tools/pit_config.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'services/*/app/**'
+      - 'tools/pit_enforcement_pipeline.py'
+      - 'tools/pit_config.yml'
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: 'Monitoring duration in minutes'
+        required: false
+        default: '60'
+        type: string
+      service_filter:
+        description: 'Specific service to validate (optional)'
+        required: false
+        type: string
+
+jobs:
+  pit-validation:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg14
+        env:
+          POSTGRES_DB: trading_db
+          POSTGRES_USER: trading_user
+          POSTGRES_PASSWORD: trading_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install asyncpg aiohttp pyyaml python-dateutil
+        
+    - name: Set up database
+      run: |
+        # Install psql for database setup
+        sudo apt-get update
+        sudo apt-get install -y postgresql-client
+        
+        # Create PIT violations table
+        PGPASSWORD=trading_password psql -h localhost -U trading_user -d trading_db -c "
+        CREATE EXTENSION IF NOT EXISTS timescaledb;
+        
+        CREATE TABLE IF NOT EXISTS pit_violations (
+          id SERIAL PRIMARY KEY,
+          violation_id VARCHAR(255) UNIQUE NOT NULL,
+          violation_type VARCHAR(50) NOT NULL,
+          service_name VARCHAR(100) NOT NULL,
+          feature_name VARCHAR(255) NOT NULL,
+          timestamp TIMESTAMPTZ NOT NULL,
+          as_of_timestamp TIMESTAMPTZ NOT NULL,
+          description TEXT NOT NULL,
+          severity VARCHAR(20) NOT NULL,
+          metadata JSONB,
+          detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          resolved_at TIMESTAMPTZ,
+          resolution_notes TEXT
+        );
+        
+        -- Create hypertable for time-series optimization
+        SELECT create_hypertable('pit_violations', 'detected_at', if_not_exists => TRUE);
+        
+        -- Create indexes for fast querying
+        CREATE INDEX IF NOT EXISTS idx_pit_violations_service ON pit_violations(service_name, detected_at);
+        CREATE INDEX IF NOT EXISTS idx_pit_violations_type ON pit_violations(violation_type, detected_at);
+        CREATE INDEX IF NOT EXISTS idx_pit_violations_severity ON pit_violations(severity, detected_at);
+        CREATE INDEX IF NOT EXISTS idx_pit_violations_resolved ON pit_violations(resolved_at) WHERE resolved_at IS NULL;
+        "
+        
+    - name: Create reports directory
+      run: mkdir -p reports
+      
+    - name: Run PIT enforcement validation
+      id: pit_validation
+      run: |
+        duration="${{ github.event.inputs.duration_minutes || '15' }}"
+        service_filter="${{ github.event.inputs.service_filter }}"
+        
+        echo "Running PIT enforcement for $duration minutes"
+        
+        if [ -n "$service_filter" ]; then
+          echo "Validating specific service: $service_filter"
+          python tools/pit_enforcement_pipeline.py validate-timestamps \
+            --service "$service_filter" \
+            --config tools/pit_config.yml
+        else
+          echo "Running full PIT enforcement monitoring"
+          python tools/pit_enforcement_pipeline.py monitor \
+            --config tools/pit_config.yml \
+            --duration "$duration" \
+            --output reports/pit_violations.json
+        fi
+        
+        # Generate comprehensive report
+        python tools/pit_enforcement_pipeline.py generate-report \
+          --config tools/pit_config.yml \
+          --output reports/pit_enforcement_report.json
+        
+        # Check if critical violations were found
+        if [ -f reports/pit_enforcement_report.json ]; then
+          critical_violations=$(python -c "
+import json
+with open('reports/pit_enforcement_report.json') as f:
+    report = json.load(f)
+print(report['summary']['critical_violations'])
+          ")
+          echo "critical_violations=$critical_violations" >> $GITHUB_OUTPUT
+          
+          total_violations=$(python -c "
+import json
+with open('reports/pit_enforcement_report.json') as f:
+    report = json.load(f)
+print(report['summary']['total_violations'])
+          ")
+          echo "total_violations=$total_violations" >> $GITHUB_OUTPUT
+        else
+          echo "critical_violations=0" >> $GITHUB_OUTPUT
+          echo "total_violations=0" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: Upload PIT enforcement reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: pit-enforcement-reports
+        path: reports/
+        retention-days: 30
+        
+    - name: Display PIT enforcement summary
+      if: always()
+      run: |
+        echo "## Point-in-Time (PIT) Enforcement Results" >> $GITHUB_STEP_SUMMARY
+        
+        if [ -f reports/pit_enforcement_report.json ]; then
+          python -c "
+import json
+with open('reports/pit_enforcement_report.json') as f:
+    report = json.load(f)
+
+summary = report['summary']
+print(f'- **Total Violations**: {summary[\"total_violations\"]}')
+print(f'- **Critical Violations**: {summary[\"critical_violations\"]}')
+print(f'- **Unresolved Violations**: {summary[\"unresolved_violations\"]}')
+print(f'- **Resolution Rate**: {summary[\"resolution_rate\"]:.1f}%')
+
+if summary['critical_violations'] > 0:
+    print('\\n### ❌ Critical PIT Violations Detected')
+    print('The system has point-in-time violations that must be addressed immediately.')
+elif summary['total_violations'] > 0:
+    print('\\n### ⚠️ PIT Violations Found')
+    print('Non-critical violations detected. Review and resolve when possible.')
+else:
+    print('\\n### ✅ No PIT Violations')
+    print('All services are operating within point-in-time compliance.')
+
+if 'violations_by_service' in report:
+    print('\\n### Violations by Service')
+    for service, count in report['violations_by_service'].items():
+        if count > 0:
+            print(f'- **{service}**: {count} violations')
+
+if 'recommendations' in report and report['recommendations']:
+    print('\\n### Recommendations')
+    for rec in report['recommendations'][:5]:  # Show first 5 recommendations
+        print(f'- {rec}')
+          " >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ PIT enforcement report not generated" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+    - name: Fail job on critical violations
+      if: steps.pit_validation.outputs.critical_violations != '0'
+      run: |
+        echo "❌ Critical PIT violations detected: ${{ steps.pit_validation.outputs.critical_violations }}"
+        echo "The deployment cannot proceed with critical point-in-time violations."
+        exit 1
+        
+    - name: Comment PR with PIT results
+      if: github.event_name == 'pull_request' && always()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          
+          let comment = '## 🕐 Point-in-Time (PIT) Enforcement Results\n\n';
+          
+          try {
+            const report = JSON.parse(fs.readFileSync('reports/pit_enforcement_report.json', 'utf8'));
+            const summary = report.summary;
+            
+            if (summary.critical_violations > 0) {
+              comment += `❌ **CRITICAL: ${summary.critical_violations} PIT violations detected**\n\n`;
+              comment += `This PR introduces critical point-in-time violations that must be fixed before merging.\n\n`;
+            } else if (summary.total_violations > 0) {
+              comment += `⚠️ **${summary.total_violations} PIT violations found**\n\n`;
+              comment += `Non-critical violations detected. Consider addressing before merging.\n\n`;
+            } else {
+              comment += `✅ **All PIT validations passed**\n\n`;
+              comment += `No point-in-time violations detected.\n\n`;
+            }
+            
+            comment += `### Summary\n`;
+            comment += `- Total Violations: ${summary.total_violations}\n`;
+            comment += `- Critical Violations: ${summary.critical_violations}\n`;
+            comment += `- Resolution Rate: ${summary.resolution_rate.toFixed(1)}%\n\n`;
+            
+            if (report.violations_by_service && Object.keys(report.violations_by_service).length > 0) {
+              comment += `### Violations by Service\n`;
+              Object.entries(report.violations_by_service).forEach(([service, count]) => {
+                if (count > 0) {
+                  comment += `- **${service}**: ${count} violations\n`;
+                }
+              });
+              comment += '\n';
+            }
+            
+            if (report.recommendations && report.recommendations.length > 0) {
+              comment += `### 🔧 Recommendations\n`;
+              report.recommendations.slice(0, 3).forEach(rec => {
+                comment += `- ${rec}\n`;
+              });
+            }
+            
+          } catch (error) {
+            comment += '❌ Failed to generate PIT enforcement report\n';
+            comment += `Error: ${error.message}\n`;
+          }
+          
+          // Find and update existing comment
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+          
+          const existingComment = comments.find(comment => 
+            comment.body.includes('Point-in-Time (PIT) Enforcement Results')
+          );
+          
+          if (existingComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: existingComment.id,
+              body: comment
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: comment
+            });
+          }
+
+  validate-temporal-tables:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: timescale/timescaledb:latest-pg14
+        env:
+          POSTGRES_DB: trading_db
+          POSTGRES_USER: trading_user
+          POSTGRES_PASSWORD: trading_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Validate temporal table schemas
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y postgresql-client
+        
+        echo "Validating temporal table structures..."
+        
+        PGPASSWORD=trading_password psql -h localhost -U trading_user -d trading_db -c "
+        -- Check for proper timestamp columns
+        SELECT 
+          schemaname,
+          tablename,
+          attname as column_name,
+          typname as data_type
+        FROM pg_attribute a
+        JOIN pg_class c ON a.attrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        JOIN pg_type t ON a.atttypid = t.oid
+        WHERE n.nspname = 'public'
+        AND c.relkind = 'r'
+        AND t.typname IN ('timestamp', 'timestamptz')
+        AND a.attnum > 0
+        AND NOT a.attisdropped
+        ORDER BY schemaname, tablename, attname;
+        
+        -- Validate TimescaleDB hypertables
+        SELECT 
+          schemaname,
+          tablename,
+          column_name,
+          column_type
+        FROM timescaledb_information.hypertables
+        WHERE schemaname = 'public';
+        "
+        
+        echo "✅ Temporal table validation complete"

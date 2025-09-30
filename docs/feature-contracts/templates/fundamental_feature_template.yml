@@ -1,0 +1,179 @@
+# Fundamental Feature Contract Template
+# Use this template for fundamental data (earnings, ratios, financial statements, etc.)
+
+# REQUIRED: Basic Identification
+feature_name: "example_pe_ratio_ttm"  # REPLACE: Unique feature identifier
+feature_type: "fundamental"          # FIXED: Must be "fundamental" for this template
+data_source: "fundamentals_service"  # REPLACE: Source service/vendor name
+version: "1.0.0"                     # REPLACE: Semantic versioning
+
+# REQUIRED: Point-in-Time Constraints
+as_of_ts_rule: "market_close_plus_1d" # CHOOSE: market_close | next_day | filing_date | custom
+effective_ts_rule: "report_period_end" # CHOOSE: report_period_end | filing_date | announcement_date
+arrival_latency_minutes: 1440         # REPLACE: Expected delay (1440 = 24 hours)
+point_in_time_rule: |                 # REPLACE: Specific PIT constraints
+  Fundamental data becomes available at market close the day after
+  the underlying financial data is filed or announced. Uses T+1 rule
+  to ensure data availability in trading models.
+
+# REQUIRED: Data Quality & SLA
+vendor_sla:
+  availability: 99.0           # REPLACE: Lower for fundamental data
+  latency_minutes: 1440        # REPLACE: 24-hour delivery window
+  quality: 98.0               # REPLACE: Quality expectations
+
+revision_policy:
+  revision_frequency: "quarterly" # CHOOSE: never | daily | weekly | monthly | quarterly
+  revision_window_days: 90     # REPLACE: Restatements can go back 90 days
+  notification_method: "webhook" # CHOOSE: none | email | webhook | alert
+
+# REQUIRED: Business Logic
+computation_logic: |          # REPLACE: Clear description of calculation
+  Price-to-Earnings Ratio (Trailing Twelve Months):
+  PE_TTM = Current Stock Price / Earnings Per Share (TTM)
+  
+  EPS TTM calculated as sum of last 4 quarterly EPS values.
+  Uses diluted EPS when available, basic EPS as fallback.
+  Price taken at market close on calculation date.
+
+dependencies:                 # REPLACE: List of required features/data
+  - "stock_price_close"
+  - "eps_diluted_q1"
+  - "eps_diluted_q2" 
+  - "eps_diluted_q3"
+  - "eps_diluted_q4"
+  - "shares_outstanding_diluted"
+
+lookback_period_days: 365     # REPLACE: TTM requires 1 year of data
+update_frequency: "daily"     # REPLACE: Updated daily after market close
+
+# REQUIRED: Validation & Monitoring
+validation_rules:
+  valid_range: [0, 200]       # REPLACE: Reasonable PE ratio range
+  null_handling: "forward_fill" # CHOOSE: reject | forward_fill | interpolate
+  outlier_detection: "iqr"    # CHOOSE: 3_sigma | iqr | percentile | custom
+  monitoring_alerts:          # REPLACE: List of alerting conditions
+    - "extreme_pe_values"
+    - "negative_earnings_handling"
+    - "missing_quarterly_data"
+    - "price_earnings_mismatch"
+
+# REQUIRED: Compliance & Audit
+pii_classification: "none"    # CHOOSE: none | masked | anonymized | sensitive
+regulatory_notes: |           # REPLACE: Regulatory considerations
+  Fundamental data sourced from public SEC filings and earnings reports.
+  Calculation methodology follows GAAP standards.
+  Data redistribution complies with vendor licensing agreements.
+  Historical restatements handled according to SEC guidance.
+
+audit_trail: "git_commits"    # CHOOSE: git_commits | database_logs | manual
+retention_policy: "10_years"  # REPLACE: Extended retention for fundamental data
+
+# REQUIRED: Metadata
+created_by: "quant_researcher"         # REPLACE: Creator's identifier
+created_at: "2024-01-15T10:30:00Z"    # REPLACE: ISO 8601 timestamp
+approved_by: "fundamental_analyst"     # REPLACE: Approver's identifier  
+approved_at: "2024-01-15T16:00:00Z"    # REPLACE: ISO 8601 timestamp
+last_modified: "2024-01-15T16:00:00Z"  # Will be auto-updated
+
+# OPTIONAL: Extended Configuration
+feature_config:               # REPLACE: Feature-specific parameters
+  eps_type_preference:        # Preference order for EPS calculation
+    - "diluted"
+    - "basic"
+    - "adjusted"
+  price_timing: "close"       # Price timing for calculation
+  currency_handling: "report_currency" # How to handle currency conversion
+  restatement_policy: "latest" # Use latest restated values
+
+business_context:             # REPLACE: Business use and interpretation
+  purpose: "Valuation metric for relative comparison and screening"
+  interpretation: |
+    PE ratio indicates how much investors pay per dollar of earnings.
+    Higher ratios suggest growth expectations or overvaluation.
+    Lower ratios may indicate value opportunities or distress.
+    Industry comparison is essential for meaningful analysis.
+  typical_range: [5, 50]      # Normal range for most stocks
+  extreme_values: [0, 100]    # Extreme but potentially valid
+
+performance_expectations:     # REPLACE: Expected behavior characteristics
+  volatility: "medium"        # Changes with both price and earnings
+  seasonality: "quarterly"    # Updated quarterly with earnings
+  revision_frequency: "low"   # Revisions mainly from restatements
+  cross_sectional_stability: "high" # Relative rankings stable
+
+# TESTING: Validation test cases
+test_cases:
+  - name: "standard_calculation"
+    description: "Normal PE calculation with complete data"
+    input_data:
+      stock_price: 100.00
+      eps_q1: 2.50
+      eps_q2: 2.75
+      eps_q3: 3.00
+      eps_q4: 3.25
+    expected_output: 8.70      # 100 / (2.5+2.75+3.0+3.25)
+    tolerance: 0.01
+  
+  - name: "missing_data_handling"
+    description: "Handle missing quarterly earnings"
+    scenarios:
+      - "partial_quarter_missing"
+      - "restatement_scenario"
+      - "ipo_insufficient_history"
+  
+  - name: "edge_cases"
+    description: "Test boundary conditions"
+    scenarios:
+      - "negative_earnings_ttm"
+      - "zero_earnings"
+      - "penny_stock_extreme_ratios"
+
+# MONITORING: Production monitoring configuration
+monitoring_config:
+  alert_thresholds:
+    missing_earnings_data: 1   # Alert on any missing quarterly data
+    extreme_ratio_threshold: 500 # Alert on PE > 500
+    negative_earnings_alert: true # Alert on negative earnings
+    price_stale_hours: 25      # Alert if price data too old
+  
+  quality_metrics:
+    data_completeness: 95.0    # Target percentage of complete records
+    calculation_accuracy: 99.5 # Validated against manual calculations
+    timeliness_sla: 95.0      # Percentage meeting delivery SLA
+  
+  reconciliation:
+    benchmark_sources:         # Sources for validation
+      - "bloomberg_terminal"
+      - "factset_fundamentals"
+    tolerance_threshold: 0.05  # 5% tolerance for reconciliation
+    validation_frequency: "weekly"
+
+# SEASONAL BEHAVIOR: Handle quarterly reporting cycles
+seasonal_config:
+  reporting_calendar:
+    q1_typical_dates: ["Apr 15", "May 15"]  # When Q1 results typically filed
+    q2_typical_dates: ["Jul 15", "Aug 15"]  # When Q2 results typically filed
+    q3_typical_dates: ["Oct 15", "Nov 15"]  # When Q3 results typically filed
+    q4_typical_dates: ["Feb 15", "Mar 31"]  # When Q4 results typically filed
+  
+  data_aging:
+    stale_threshold_days: 95   # Consider data stale after 95 days
+    forward_fill_limit: 5     # Max days to forward fill missing data
+    interpolation_allowed: false # No interpolation for fundamental data
+
+# EXAMPLE VALUES (for documentation)
+example_data:
+  sample_input:
+    timestamp: "2024-01-15T16:00:00Z"
+    stock_price: 150.25
+    eps_ttm: 12.50
+    market_cap: 15000000000
+  
+  sample_output:
+    timestamp: "2024-01-15T16:00:00Z"
+    pe_ratio_ttm: 12.02
+    confidence: 0.98
+    quality_score: 1.0
+    data_age_days: 15
+    last_earnings_date: "2023-12-31"

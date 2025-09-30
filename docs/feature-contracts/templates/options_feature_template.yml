@@ -1,0 +1,212 @@
+# Options Feature Contract Template
+# Use this template for options-derived features (implied volatility, Greeks, flow metrics, etc.)
+
+# REQUIRED: Basic Identification
+feature_name: "example_implied_volatility_30d"  # REPLACE: Unique feature identifier
+feature_type: "options"                         # FIXED: Must be "options" for this template
+data_source: "options_data_service"             # REPLACE: Source service/vendor name
+version: "1.0.0"                               # REPLACE: Semantic versioning
+
+# REQUIRED: Point-in-Time Constraints
+as_of_ts_rule: "quote_timestamp"               # CHOOSE: quote_timestamp | trade_timestamp | market_close
+effective_ts_rule: "quote_timestamp"           # CHOOSE: quote_timestamp | expiration_date | settlement_time
+arrival_latency_minutes: 2                     # REPLACE: Expected delay (2 min for options processing)
+point_in_time_rule: |                          # REPLACE: Specific PIT constraints
+  Options data uses real-time quote timestamps to calculate implied volatility.
+  Expiration dates and time decay handled precisely to avoid lookahead bias.
+  Only uses option quotes available at the calculation timestamp.
+
+# REQUIRED: Data Quality & SLA
+vendor_sla:
+  availability: 99.5           # REPLACE: High availability during market hours
+  latency_minutes: 2           # REPLACE: Near real-time options data
+  quality: 98.0               # REPLACE: Options data can be noisy
+
+revision_policy:
+  revision_frequency: "never"   # CHOOSE: never | daily | weekly (options data not revised)
+  revision_window_days: 0      # REPLACE: No revisions for options quotes
+  notification_method: "none"  # CHOOSE: none | email | webhook | alert
+
+# REQUIRED: Business Logic
+computation_logic: |          # REPLACE: Clear description of calculation
+  30-Day Implied Volatility calculated using:
+  1. Select ATM options closest to 30-day expiration
+  2. Apply Black-Scholes model inversion to extract IV from market prices
+  3. Weight multiple strikes around ATM (±5% moneyness range)
+  4. Use risk-free rate from Treasury curve interpolation
+  5. Apply dividend adjustment for expected dividend payments
+  6. Smooth outliers using median filtering across strike range
+
+dependencies:                 # REPLACE: List of required features/data
+  - "options_quotes_chain"
+  - "underlying_price"
+  - "risk_free_rate"
+  - "dividend_yield"
+  - "time_to_expiration"
+
+lookback_period_days: 5       # REPLACE: Short lookback for options data
+update_frequency: "1min"      # REPLACE: Real-time options data updates
+
+# REQUIRED: Validation & Monitoring
+validation_rules:
+  valid_range: [0.05, 3.0]    # REPLACE: Reasonable IV range (5% to 300%)
+  null_handling: "interpolate" # CHOOSE: reject | forward_fill | interpolate
+  outlier_detection: "iqr"     # CHOOSE: 3_sigma | iqr | percentile | custom
+  monitoring_alerts:          # REPLACE: List of alerting conditions
+    - "iv_calculation_errors"
+    - "missing_options_quotes"
+    - "extreme_iv_values"
+    - "expiration_date_mismatch"
+
+# REQUIRED: Compliance & Audit
+pii_classification: "none"    # CHOOSE: none | masked | anonymized | sensitive
+regulatory_notes: |           # REPLACE: Regulatory considerations
+  Options market data sourced from registered exchanges.
+  Implied volatility calculations use standard Black-Scholes methodology.
+  No proprietary trading information or client positions used.
+  Complies with market data redistribution agreements.
+
+audit_trail: "database_logs"  # CHOOSE: git_commits | database_logs | manual
+retention_policy: "3_years"   # REPLACE: Standard retention for options data
+
+# REQUIRED: Metadata
+created_by: "derivatives_analyst"       # REPLACE: Creator's identifier
+created_at: "2024-01-15T10:30:00Z"      # REPLACE: ISO 8601 timestamp
+approved_by: "risk_manager"              # REPLACE: Approver's identifier  
+approved_at: "2024-01-15T16:00:00Z"      # REPLACE: ISO 8601 timestamp
+last_modified: "2024-01-15T16:00:00Z"    # Will be auto-updated
+
+# OPTIONAL: Extended Configuration
+feature_config:               # REPLACE: Feature-specific parameters
+  target_dte: 30              # Target days to expiration
+  dte_tolerance: 7            # Acceptable range around target DTE
+  moneyness_range: 0.05       # ±5% around ATM for IV calculation
+  min_open_interest: 10       # Minimum OI for quote inclusion
+  min_volume: 1               # Minimum daily volume requirement
+  model_type: "black_scholes" # Pricing model for IV calculation
+  smoothing_method: "median_filter" # Method to handle outliers
+
+business_context:             # REPLACE: Business use and interpretation
+  purpose: "Volatility measure for risk management and options strategies"
+  interpretation: |
+    Implied volatility represents market expectation of future price volatility.
+    Higher IV indicates greater expected price movement uncertainty.
+    IV term structure provides insights into volatility expectations over time.
+    Relative IV levels help identify rich/cheap options opportunities.
+  typical_range: [0.15, 0.80] # Normal IV range for most stocks
+  extreme_values: [0.05, 2.0] # Extreme but possible IV levels
+
+performance_expectations:     # REPLACE: Expected behavior characteristics
+  volatility: "high"          # IV changes rapidly with market conditions
+  correlation_with_realized_vol: 0.7 # Strong correlation with actual volatility
+  signal_frequency: "intraday" # Updates throughout trading day
+  lag_characteristics: "immediate" # Immediate response to market changes
+
+# TESTING: Validation test cases
+test_cases:
+  - name: "standard_iv_calculation"
+    description: "Normal ATM IV calculation with liquid options"
+    input_data:
+      underlying_price: 100.00
+      strike_price: 100.00
+      option_price: 3.50
+      time_to_expiration: 30
+      risk_free_rate: 0.05
+      dividend_yield: 0.02
+    expected_output: 0.25      # 25% implied volatility
+    tolerance: 0.01
+  
+  - name: "expiration_edge_cases"
+    description: "Handle options near expiration"
+    scenarios:
+      - "same_day_expiration"
+      - "weekend_expiration"
+      - "holiday_expiration"
+  
+  - name: "market_conditions"
+    description: "Test under various market conditions"
+    scenarios:
+      - "high_volatility_environment"
+      - "low_liquidity_periods"
+      - "earnings_announcement_day"
+
+# MONITORING: Production monitoring configuration
+monitoring_config:
+  alert_thresholds:
+    missing_quotes_minutes: 5  # Alert if no quotes for 5 minutes
+    iv_calculation_failures: 5 # Alert on calculation errors
+    extreme_iv_percentage: 10  # Alert if >10% of IVs are extreme
+    liquidity_threshold: 50    # Alert if <50% of expected strikes
+  
+  quality_metrics:
+    calculation_success_rate: 95.0 # Target success rate for IV calculations
+    quote_completeness: 90.0   # Percentage of expected option quotes
+    timeliness_sla: 95.0      # Percentage meeting delivery SLA
+  
+  reconciliation:
+    benchmark_sources:         # Sources for validation
+      - "bloomberg_ivol"
+      - "cboe_vix_methodology"
+      - "independent_calculation"
+    tolerance_threshold: 0.02  # 2% tolerance for IV reconciliation
+    validation_frequency: "hourly"
+
+# OPTIONS SPECIFIC: Derivatives and Greeks considerations
+options_config:
+  expiration_handling:
+    weekend_adjustment: true   # Adjust for weekend expirations
+    holiday_calendar: "exchange" # Use exchange holiday calendar
+    time_decay_precision: "minutes" # Precision for time decay
+  
+  Greeks_calculation:
+    calculate_delta: true      # Calculate delta alongside IV
+    calculate_gamma: true      # Calculate gamma for risk management
+    calculate_theta: true      # Calculate time decay
+    calculate_vega: true       # Calculate volatility sensitivity
+  
+  model_parameters:
+    interest_rate_source: "treasury_curve" # Source for risk-free rate
+    dividend_adjustment: "continuous" # How to handle dividends
+    early_exercise: false      # Assume European exercise for IV
+    volatility_smile: true     # Account for volatility smile
+  
+  liquidity_filters:
+    min_bid_ask_spread: 0.05   # Minimum spread for quote inclusion
+    max_bid_ask_spread: 2.0    # Maximum spread threshold
+    min_open_interest: 10      # Minimum open interest
+    min_volume: 1              # Minimum daily volume
+
+# TERM STRUCTURE: Handle multiple expirations
+term_structure_config:
+  standard_maturities: [7, 14, 30, 60, 90, 180] # Standard DTE buckets
+  interpolation_method: "cubic_spline" # Method for maturity interpolation
+  extrapolation_limits: [5, 365] # Min/max days for extrapolation
+  term_structure_smoothing: true # Apply smoothing across maturities
+
+# VOLATILITY SURFACE: Advanced volatility modeling
+volatility_surface_config:
+  strike_grid: "percentage"    # Strike grid in percentage of spot
+  strike_range: [0.7, 1.3]    # Moneyness range for surface
+  surface_interpolation: "rbf" # Radial basis function interpolation
+  smile_parameterization: "svi" # SVI model for volatility smile
+
+# EXAMPLE VALUES (for documentation)
+example_data:
+  sample_input:
+    timestamp: "2024-01-15T14:30:00Z"
+    underlying_symbol: "AAPL"
+    underlying_price: 150.25
+    target_dte: 30
+    risk_free_rate: 0.0525
+    dividend_yield: 0.005
+  
+  sample_output:
+    timestamp: "2024-01-15T14:30:00Z"
+    implied_volatility_30d: 0.2850
+    delta: 0.52
+    gamma: 0.0125
+    theta: -0.0850
+    vega: 0.3200
+    confidence: 0.92
+    quote_count: 8
+    quality_score: 0.88

@@ -1,0 +1,134 @@
+# Technical Feature Contract Template
+# Use this template for technical indicators (RSI, MACD, moving averages, etc.)
+
+# REQUIRED: Basic Identification
+feature_name: "example_rsi_14"  # REPLACE: Unique feature identifier (lowercase, underscores)
+feature_type: "technical"      # FIXED: Must be "technical" for this template
+data_source: "market_data_service"  # REPLACE: Source service/vendor name
+version: "1.0.0"               # REPLACE: Semantic versioning (major.minor.patch)
+
+# REQUIRED: Point-in-Time Constraints
+as_of_ts_rule: "immediate"     # CHOOSE: immediate | market_close | next_day | custom
+effective_ts_rule: "trade_timestamp"  # CHOOSE: trade_timestamp | bar_close | custom
+arrival_latency_minutes: 0     # REPLACE: Expected delay in minutes (0 for real-time)
+point_in_time_rule: |          # REPLACE: Specific PIT constraints
+  Technical indicators are available immediately upon calculation
+  from the underlying price/volume data. No future information used.
+
+# REQUIRED: Data Quality & SLA
+vendor_sla:
+  availability: 99.9           # REPLACE: Uptime percentage (99.0-100.0)
+  latency_minutes: 1           # REPLACE: Maximum delivery delay in minutes
+  quality: 99.5               # REPLACE: Accuracy/completeness percentage
+
+revision_policy:
+  revision_frequency: "never"   # CHOOSE: never | daily | weekly | monthly
+  revision_window_days: 0      # REPLACE: How far back revisions occur
+  notification_method: "none"  # CHOOSE: none | email | webhook | alert
+
+# REQUIRED: Business Logic
+computation_logic: |          # REPLACE: Clear description of calculation
+  RSI (Relative Strength Index) with 14-period lookback:
+  RSI = 100 - (100 / (1 + RS))
+  RS = Average Gain / Average Loss over 14 periods
+  Uses Wilder's smoothing method for moving averages.
+
+dependencies:                 # REPLACE: List of required features/data
+  - "close_price"
+  - "volume"
+
+lookback_period_days: 30      # REPLACE: Historical data requirement
+update_frequency: "1min"      # REPLACE: real_time | 1min | 5min | 1h | daily
+
+# REQUIRED: Validation & Monitoring
+validation_rules:
+  valid_range: [0, 100]       # REPLACE: [min, max] or null for no range
+  null_handling: "reject"     # CHOOSE: reject | forward_fill | interpolate
+  outlier_detection: "3_sigma" # CHOOSE: 3_sigma | iqr | percentile | custom
+  monitoring_alerts:          # REPLACE: List of alerting conditions
+    - "value_out_of_range"
+    - "missing_data_threshold"
+    - "calculation_error"
+
+# REQUIRED: Compliance & Audit
+pii_classification: "none"    # CHOOSE: none | masked | anonymized | sensitive
+regulatory_notes: |           # REPLACE: Any regulatory considerations
+  Technical indicators are derived from public market data.
+  No personal information or insider data used.
+  Complies with market data redistribution agreements.
+
+audit_trail: "git_commits"    # CHOOSE: git_commits | database_logs | manual
+retention_policy: "7_years"   # REPLACE: Data retention period
+
+# REQUIRED: Metadata (will be auto-populated in production)
+created_by: "feature_engineer"     # REPLACE: Creator's identifier
+created_at: "2024-01-15T10:30:00Z" # REPLACE: ISO 8601 timestamp
+approved_by: "risk_manager"        # REPLACE: Approver's identifier  
+approved_at: "2024-01-15T15:45:00Z" # REPLACE: ISO 8601 timestamp
+last_modified: "2024-01-15T15:45:00Z" # Will be auto-updated
+
+# OPTIONAL: Extended Configuration
+feature_config:               # REPLACE: Feature-specific parameters
+  period: 14                  # RSI calculation period
+  price_field: "close"        # Price field to use
+  smoothing_method: "wilder"  # Smoothing method for averages
+
+business_context:             # REPLACE: Business use and interpretation
+  purpose: "Momentum oscillator for overbought/oversold conditions"
+  interpretation: |
+    Values above 70 suggest overbought conditions
+    Values below 30 suggest oversold conditions
+    Divergences with price may signal trend reversals
+  typical_range: [20, 80]     # Normal operating range
+  extreme_values: [10, 90]    # Extreme but valid values
+
+performance_expectations:     # REPLACE: Expected behavior characteristics
+  volatility: "medium"        # low | medium | high
+  correlation_with_price: 0.3 # Expected correlation coefficient
+  signal_frequency: "daily"   # How often significant changes occur
+  lag_characteristics: "minimal" # Response time to price changes
+
+# TESTING: Validation test cases (used in CI/CD)
+test_cases:
+  - name: "standard_calculation"
+    input_data: "test_data/rsi_test_prices.csv"
+    expected_output: "test_data/rsi_expected_output.csv"
+    tolerance: 0.01
+  
+  - name: "boundary_conditions" 
+    description: "Test behavior at extreme values"
+    conditions:
+      - "all_gains_scenario"   # All price increases
+      - "all_losses_scenario"  # All price decreases
+      - "minimal_price_movement" # Very small changes
+  
+  - name: "data_quality_handling"
+    scenarios:
+      - "missing_data_points"
+      - "zero_volume_periods"
+      - "price_gaps"
+
+# MONITORING: Production monitoring configuration
+monitoring_config:
+  alert_thresholds:
+    missing_data_minutes: 5    # Alert if no data for X minutes
+    extreme_value_count: 10    # Alert if >X extreme values per day
+    calculation_errors: 1      # Alert on any calculation errors
+  
+  quality_metrics:
+    completeness_target: 99.5  # Percentage of expected data points
+    timeliness_target: 99.0    # Percentage delivered within SLA
+    accuracy_validation: "daily" # How often to validate calculations
+
+# EXAMPLE VALUES (for documentation)
+example_data:
+  sample_input:
+    timestamp: "2024-01-15T14:30:00Z"
+    close_price: 150.25
+    volume: 1000000
+  
+  sample_output:
+    timestamp: "2024-01-15T14:30:00Z"
+    rsi_14: 67.42
+    confidence: 0.95
+    quality_score: 1.0

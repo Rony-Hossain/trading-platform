@@ -26,6 +26,14 @@ from .api.gap_trading import router as gap_trading_router
 from .api.market_regime import router as market_regime_router
 from .api.event_backtest import router as event_backtest_router
 from .api.execution_modeling import router as execution_modeling_router
+from .api.error_attribution import router as error_attribution_router
+from .api.temporal_features import router as temporal_features_router
+from .api.labeling import router as labeling_router
+from .api.significance import router as significance_router
+from .api.portfolio import router as portfolio_router
+from .api.execution import router as execution_router
+from .api.monitoring import router as monitoring_router
+from .api.compliance import router as compliance_router
 import os
 
 # Configure logging
@@ -75,6 +83,14 @@ app.include_router(gap_trading_router)
 app.include_router(market_regime_router)
 app.include_router(event_backtest_router)
 app.include_router(execution_modeling_router)
+app.include_router(error_attribution_router)
+app.include_router(temporal_features_router)
+app.include_router(labeling_router, prefix="/labeling")
+app.include_router(significance_router, prefix="/significance")
+app.include_router(portfolio_router, prefix="/portfolio")
+app.include_router(execution_router, prefix="/execution")
+app.include_router(monitoring_router, prefix="/monitoring")
+app.include_router(compliance_router, prefix="/compliance")
 
 # Pydantic models
 class AnalysisRequest(BaseModel):

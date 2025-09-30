@@ -1,0 +1,286 @@
+# Point-in-Time (PIT) Enforcement Configuration
+# Configuration for the automated PIT enforcement pipeline
+
+# Service endpoints for PIT validation
+service_endpoints:
+  market-data-service: "http://localhost:8001"
+  sentiment-service: "http://localhost:8004"
+  analysis-service: "http://localhost:8003"
+  fundamentals-service: "http://localhost:8005"
+  portfolio-service: "http://localhost:8006"
+  strategy-service: "http://localhost:8007"
+  event-data-service: "http://localhost:8008"
+
+# Database configuration for TimescaleDB
+database:
+  host: "localhost"
+  port: 5432
+  database: "trading_db"
+  user: "trading_user"
+  password: "trading_password"
+  ssl_mode: "prefer"
+  connection_timeout: 30
+
+# PIT enforcement rules and thresholds
+enforcement_rules:
+  # Maximum allowed future leak (0 = no future data allowed)
+  max_future_leak_minutes: 0
+  
+  # Maximum allowed arrival delay before violation
+  max_arrival_delay_hours: 24
+  
+  # Required timestamp precision
+  required_timestamp_precision: "milliseconds"
+  
+  # Timezone enforcement (all timestamps must be normalized to this)
+  timezone_enforcement: "UTC"
+  
+  # Feature contract compliance checking
+  contract_compliance_required: true
+  
+  # Revision handling rules
+  revision_rules:
+    max_revision_window_days: 90  # Maximum allowed revision window
+    notification_required: true   # Require notification for revisions
+    audit_trail_required: true    # Require audit trail for revisions
+
+# Real-time monitoring configuration
+monitoring:
+  # How often to check for violations (seconds)
+  check_interval_seconds: 30
+  
+  # Alert when this many violations detected
+  alert_threshold_violations: 5
+  
+  # Maximum age for timestamps before flagging as suspicious
+  max_timestamp_age_days: 3650  # 10 years
+  
+  # Real-time streaming configuration
+  stream_processing:
+    enabled: true
+    buffer_size_mb: 100
+    flush_interval_seconds: 10
+    max_batch_size: 1000
+
+# Service-specific PIT rules
+service_rules:
+  market-data-service:
+    max_latency_minutes: 1        # Real-time data
+    future_leak_tolerance: 0      # Zero tolerance for future data
+    required_fields: ["timestamp", "symbol", "price"]
+    timestamp_fields: ["timestamp", "trade_time", "quote_time"]
+    
+  sentiment-service:
+    max_latency_minutes: 15       # Social media processing delay
+    future_leak_tolerance: 0
+    required_fields: ["timestamp", "symbol", "sentiment_score"]
+    timestamp_fields: ["timestamp", "event_time", "collection_time"]
+    
+  analysis-service:
+    max_latency_minutes: 5        # Analysis processing delay
+    future_leak_tolerance: 0
+    required_fields: ["timestamp", "feature_name", "value"]
+    timestamp_fields: ["timestamp", "as_of_time", "calculation_time"]
+    
+  fundamentals-service:
+    max_latency_minutes: 1440     # Daily processing for fundamentals
+    future_leak_tolerance: 0
+    required_fields: ["timestamp", "symbol", "metric_name", "value"]
+    timestamp_fields: ["timestamp", "filing_date", "report_date"]
+    
+  portfolio-service:
+    max_latency_minutes: 5        # Portfolio calculation delay
+    future_leak_tolerance: 0
+    required_fields: ["timestamp", "portfolio_id", "position"]
+    timestamp_fields: ["timestamp", "trade_time", "settlement_time"]
+    
+  strategy-service:
+    max_latency_minutes: 30       # Strategy execution delay
+    future_leak_tolerance: 0
+    required_fields: ["timestamp", "strategy_id", "signal"]
+    timestamp_fields: ["timestamp", "signal_time", "execution_time"]
+
+# Alert and notification configuration
+alerting:
+  # Alert channels
+  channels:
+    email:
+      enabled: false
+      smtp_server: "smtp.company.com"
+      smtp_port: 587
+      username: "alerts@company.com"
+      recipients: ["trading-team@company.com", "risk@company.com"]
+    
+    slack:
+      enabled: false
+      webhook_url: "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+      channel: "#trading-alerts"
+    
+    webhook:
+      enabled: true
+      url: "http://localhost:9000/pit-alerts"
+      timeout_seconds: 5
+      retry_attempts: 3
+    
+    database:
+      enabled: true
+      table_name: "pit_violations"
+      retention_days: 365
+  
+  # Alert rules
+  rules:
+    critical_violations:
+      threshold: 1
+      notification_delay_minutes: 0  # Immediate
+      escalation_minutes: 15
+    
+    high_violations:
+      threshold: 3
+      notification_delay_minutes: 5
+      escalation_minutes: 30
+    
+    medium_violations:
+      threshold: 10
+      notification_delay_minutes: 15
+      escalation_minutes: 60
+
+# Data validation and cleansing rules
+data_validation:
+  # Timestamp validation
+  timestamp_validation:
+    # Acceptable timestamp formats (in order of preference)
+    accepted_formats:
+      - "%Y-%m-%dT%H:%M:%S.%fZ"      # ISO 8601 with microseconds
+      - "%Y-%m-%dT%H:%M:%SZ"         # ISO 8601 without microseconds
+      - "%Y-%m-%d %H:%M:%S.%f"       # SQL timestamp with microseconds
+      - "%Y-%m-%d %H:%M:%S"          # SQL timestamp
+      - "%Y-%m-%dT%H:%M:%S.%f%z"     # ISO with timezone
+    
+    # Timezone handling
+    default_timezone: "UTC"
+    timezone_detection: true
+    timezone_conversion_required: true
+    
+    # Precision requirements
+    millisecond_precision_required: true
+    microsecond_precision_preferred: true
+    
+    # Range validation
+    min_timestamp: "1990-01-01T00:00:00Z"  # Earliest valid timestamp
+    max_future_offset_minutes: 5           # Allow small future offset for clock drift
+  
+  # Data quality checks
+  quality_checks:
+    null_value_tolerance: 0.01    # 1% null values allowed
+    duplicate_detection: true
+    outlier_detection: true
+    schema_validation: true
+    referential_integrity: true
+
+# Automated remediation
+remediation:
+  # Automatic fixes for common issues
+  auto_fix:
+    enabled: true
+    
+    # Timestamp normalization
+    normalize_timestamps: true
+    add_missing_timezones: true
+    fix_precision_issues: true
+    
+    # Data quality fixes
+    remove_duplicates: true
+    flag_outliers: true
+    
+    # PIT violations
+    quarantine_future_data: true
+    delay_late_arrivals: true
+  
+  # Manual review requirements
+  manual_review:
+    critical_violations: true
+    data_modification: true
+    contract_changes: true
+    
+  # Backup and recovery
+  backup:
+    enabled: true
+    retention_days: 30
+    compression: true
+
+# Performance and scaling
+performance:
+  # Processing limits
+  max_concurrent_validations: 10
+  max_memory_usage_mb: 2048
+  max_processing_time_seconds: 300
+  
+  # Caching configuration
+  cache:
+    enabled: true
+    ttl_seconds: 3600
+    max_size_mb: 500
+    
+  # Batch processing
+  batch_processing:
+    enabled: true
+    batch_size: 1000
+    max_batch_age_seconds: 60
+    parallel_batches: 5
+
+# Reporting and analytics
+reporting:
+  # Report generation schedule
+  daily_reports: true
+  weekly_summaries: true
+  monthly_analytics: true
+  
+  # Report content
+  include_trends: true
+  include_predictions: true
+  include_recommendations: true
+  
+  # Export formats
+  export_formats: ["json", "csv", "pdf"]
+  
+  # Distribution
+  auto_distribute: true
+  distribution_list: ["trading-team@company.com", "compliance@company.com"]
+
+# Integration with existing systems
+integrations:
+  # Monitoring systems
+  prometheus:
+    enabled: true
+    metrics_port: 9090
+    push_gateway: "http://localhost:9091"
+  
+  grafana:
+    enabled: true
+    dashboard_config: "grafana_dashboard.json"
+  
+  # Trading systems
+  risk_management:
+    enabled: true
+    api_endpoint: "http://localhost:8010/risk"
+    real_time_alerts: true
+  
+  compliance:
+    enabled: true
+    audit_trail: true
+    regulatory_reporting: true
+
+# Development and testing
+development:
+  # Debug settings
+  debug_mode: false
+  verbose_logging: false
+  trace_violations: true
+  
+  # Testing configuration
+  test_data_generation: true
+  synthetic_violations: false  # Don't generate fake violations in production
+  
+  # Performance profiling
+  profiling_enabled: false
+  profile_output_dir: "profiles/"
