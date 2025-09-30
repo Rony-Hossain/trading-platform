@@ -1,0 +1,72 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # MLOps Orchestrator metrics
+  - job_name: 'mlops-orchestrator'
+    static_configs:
+      - targets: ['mlops-orchestrator:8090']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # MLflow Server metrics
+  - job_name: 'mlflow-server'
+    static_configs:
+      - targets: ['mlflow-server:5000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Model Gateway (Nginx) metrics
+  - job_name: 'model-gateway'
+    static_configs:
+      - targets: ['model-gateway:80']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # Redis metrics
+  - job_name: 'redis-mlops'
+    static_configs:
+      - targets: ['redis-mlops:6379']
+    scrape_interval: 15s
+
+  # PostgreSQL metrics (if exporter is available)
+  - job_name: 'postgres-mlflow'
+    static_configs:
+      - targets: ['postgres-mlflow:5432']
+    scrape_interval: 30s
+
+  # Trading Platform Services
+  - job_name: 'analysis-service'
+    static_configs:
+      - targets: ['host.docker.internal:8003']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'sentiment-service'
+    static_configs:
+      - targets: ['host.docker.internal:8004']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'portfolio-service'
+    static_configs:
+      - targets: ['host.docker.internal:8002']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  - job_name: 'market-data-service'
+    static_configs:
+      - targets: ['host.docker.internal:8001']
+    metrics_path: '/metrics'
+    scrape_interval: 15s

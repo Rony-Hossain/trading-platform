@@ -21,6 +21,8 @@ from .model_registry.mlflow_registry import MLflowModelRegistry, ModelStage, Mod
 from .deployment.canary_deployment import CanaryDeploymentManager, CanaryConfig, DeploymentStrategy
 from .monitoring.model_performance_monitor import ModelPerformanceMonitor, PerformanceThreshold
 from .deployment.rollback_system import AutomatedRollbackSystem, PromotionCriteria, RollbackCriteria
+from .monitoring.drift_monitoring_service import DriftMonitoringService, MonitoringMetric, PSIResult, PerformanceDecayResult
+from .workflows.retraining_orchestrator import RetrainingOrchestrator, RetrainingWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +60,28 @@ class MonitoringConfigRequest(BaseModel):
     model_type: str
     custom_thresholds: List[Dict[str, Any]] = None
 
+class DriftMonitoringRequest(BaseModel):
+    model_name: str
+    model_version: str
+    expected_data: List[float]
+    actual_data: List[float]
+    feature_name: str = "default"
+
+class PerformanceDecayRequest(BaseModel):
+    model_name: str
+    model_version: str
+    model_type: str
+    current_predictions: List[float]
+    actual_values: List[float]
+
+class RetrainingTriggerRequest(BaseModel):
+    model_name: str
+    model_version: str
+    trigger_type: str
+    trigger_conditions: Dict[str, Any]
+    priority: int = 3
+    auto_execute: bool = False
+
 class MLOpsOrchestrator:
     """
     Central orchestrator for MLOps pipeline
@@ -90,6 +114,20 @@ class MLOpsOrchestrator:
             self.canary_manager
         )
         
+        # Initialize new drift monitoring and retraining services
+        self.drift_monitor = DriftMonitoringService(
+            self.model_registry,
+            self.performance_monitor,
+            redis_url=self.config.get("redis_url", "redis://localhost:6379")
+        )
+        
+        self.retraining_orchestrator = RetrainingOrchestrator(
+            self.model_registry,
+            self.canary_manager,
+            self.drift_monitor,
+            redis_url=self.config.get("redis_url", "redis://localhost:6379")
+        )
+        
         # FastAPI app for MLOps API
         self.app = self._create_app()
         
@@ -101,7 +139,9 @@ class MLOpsOrchestrator:
                 "model_registry": "unknown",
                 "canary_manager": "unknown",
                 "performance_monitor": "unknown",
-                "rollback_system": "unknown"
+                "rollback_system": "unknown",
+                "drift_monitor": "unknown",
+                "retraining_orchestrator": "unknown"
             },
             "last_updated": datetime.utcnow()
         }

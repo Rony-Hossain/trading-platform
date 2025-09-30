@@ -113,6 +113,28 @@ scrape_configs:
     metrics_path: '/api/v1/metrics'
     scrape_interval: 15s
 
+  # Data Latency Monitor
+  - job_name: 'latency-monitor'
+    static_configs:
+      - targets: ['latency-monitor:8080']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 8s
+
+  # Pushgateway for batch metrics
+  - job_name: 'pushgateway'
+    static_configs:
+      - targets: ['pushgateway:9091']
+    honor_labels: true
+    scrape_interval: 15s
+
+  # MLOps Metrics (from MLOps orchestrator)
+  - job_name: 'mlops-services'
+    static_configs:
+      - targets: ['mlops-orchestrator:8090']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
 # Remote write configuration (optional - for long-term storage)
 # remote_write:
 #   - url: "https://prometheus-remote-write-endpoint/api/v1/write"

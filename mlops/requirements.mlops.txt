@@ -1,0 +1,35 @@
+# MLOps Core Dependencies
+mlflow>=2.0.0
+fastapi>=0.95.0
+uvicorn[standard]>=0.20.0
+pydantic>=1.10.0
+
+# ML and Data Science
+numpy>=1.21.0
+pandas>=1.5.0
+scikit-learn>=1.1.0
+scipy>=1.9.0
+
+# Database and Storage
+psycopg2-binary>=2.9.0
+redis>=4.0.0
+boto3>=1.20.0
+minio>=7.0.0
+
+# Async and HTTP
+aiohttp>=3.8.0
+httpx>=0.23.0
+asyncio-mqtt>=0.11.0
+
+# Monitoring and Logging
+prometheus-client>=0.15.0
+structlog>=22.0.0
+
+# Testing and Quality
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# Utilities
+python-multipart>=0.0.5
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4

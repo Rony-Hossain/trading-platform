@@ -1,0 +1,329 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "Trading Platform - Data Latency Monitoring",
+    "tags": ["trading", "latency", "performance"],
+    "style": "dark",
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "End-to-End Latency Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "trading_end_to_end_latency_seconds",
+            "legendFormat": "{{data_source}} - {{symbol}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 0.5},
+                {"color": "red", "value": 2.0}
+              ]
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "SLA Compliance",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "trading_sla_compliance",
+            "legendFormat": "{{data_source}} SLA",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "red", "value": null},
+                {"color": "yellow", "value": 0.95},
+                {"color": "green", "value": 0.99}
+              ]
+            },
+            "unit": "percentunit",
+            "max": 1,
+            "min": 0
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Market Data Latency Timeline",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "trading_end_to_end_latency_seconds{data_source=\"market_data\"}",
+            "legendFormat": "{{symbol}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "custom": {
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "vis": false
+              },
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {
+                "type": "linear"
+              },
+              "showPoints": "never",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {
+                "mode": "line"
+              }
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {
+                  "color": "green",
+                  "value": null
+                },
+                {
+                  "color": "yellow",
+                  "value": 0.5
+                },
+                {
+                  "color": "red",
+                  "value": 1.0
+                }
+              ]
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+      },
+      {
+        "id": 4,
+        "title": "Stage Latency Breakdown",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "trading_stage_latency_seconds{stage=\"source_ingestion\"}",
+            "legendFormat": "Source Ingestion - {{data_source}}",
+            "refId": "A"
+          },
+          {
+            "expr": "trading_stage_latency_seconds{stage=\"feature_engineering\"}",
+            "legendFormat": "Feature Engineering - {{data_source}}",
+            "refId": "B"
+          },
+          {
+            "expr": "trading_stage_latency_seconds{stage=\"model_inference\"}",
+            "legendFormat": "Model Inference - {{data_source}}",
+            "refId": "C"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
+      },
+      {
+        "id": 5,
+        "title": "Critical Path Analysis",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "avg_over_time(trading_stage_latency_seconds[5m])",
+            "legendFormat": "{{stage}} - {{data_source}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
+      },
+      {
+        "id": 6,
+        "title": "Sentiment Data Latency",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "trading_end_to_end_latency_seconds{data_source=\"sentiment\"}",
+            "legendFormat": "{{symbol}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 10.0},
+                {"color": "red", "value": 15.0}
+              ]
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24}
+      },
+      {
+        "id": 7,
+        "title": "Options Data Latency",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "trading_end_to_end_latency_seconds{data_source=\"options\"}",
+            "legendFormat": "{{symbol}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "palette-classic"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 3.0},
+                {"color": "red", "value": 5.0}
+              ]
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24}
+      },
+      {
+        "id": 8,
+        "title": "Data Freshness Monitor",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "time() - trading_last_update_timestamp",
+            "legendFormat": "{{data_source}} - Last Update",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "color": {
+              "mode": "thresholds"
+            },
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 300},
+                {"color": "red", "value": 600}
+              ]
+            },
+            "unit": "s"
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 32}
+      },
+      {
+        "id": 9,
+        "title": "Strategy Impact Alerts",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "ALERTS{alert_type=\"alpha_impact\"}",
+            "legendFormat": "",
+            "refId": "A",
+            "format": "table"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "align": "auto",
+              "displayMode": "auto"
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 24, "x": 0, "y": 40}
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "data_source",
+          "type": "query",
+          "query": "label_values(trading_end_to_end_latency_seconds, data_source)",
+          "refresh": 1,
+          "includeAll": true,
+          "allValue": null
+        },
+        {
+          "name": "symbol",
+          "type": "query",
+          "query": "label_values(trading_end_to_end_latency_seconds{data_source=~\"$data_source\"}, symbol)",
+          "refresh": 1,
+          "includeAll": true,
+          "allValue": null
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Latency Alerts",
+          "datasource": "Prometheus",
+          "expr": "ALERTS{alertname=~\".*Latency.*\"}",
+          "iconColor": "red"
+        }
+      ]
+    }
+  }
+}

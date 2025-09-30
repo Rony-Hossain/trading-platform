@@ -1,0 +1,197 @@
+groups:
+- name: data_latency_alerts
+  rules:
+  # End-to-End Latency Alerts
+  - alert: MarketDataLatencyHigh
+    expr: trading_end_to_end_latency_seconds{data_source="market_data"} > 1.0
+    for: 2m
+    labels:
+      severity: warning
+      service: market_data
+      alert_type: latency
+    annotations:
+      summary: "Market data end-to-end latency is high"
+      description: "Market data latency is {{ $value }}s, which exceeds 1 second SLA. This may impact high-frequency strategies."
+
+  - alert: MarketDataLatencyCritical  
+    expr: trading_end_to_end_latency_seconds{data_source="market_data"} > 2.0
+    for: 1m
+    labels:
+      severity: critical
+      service: market_data
+      alert_type: latency
+    annotations:
+      summary: "Market data end-to-end latency is critical"
+      description: "Market data latency is {{ $value }}s, which severely impacts real-time trading strategies."
+
+  - alert: SentimentLatencyHigh
+    expr: trading_end_to_end_latency_seconds{data_source="sentiment"} > 10.0
+    for: 5m
+    labels:
+      severity: warning
+      service: sentiment
+      alert_type: latency
+    annotations:
+      summary: "Sentiment data latency is high"
+      description: "Sentiment processing latency is {{ $value }}s, which may delay event-driven strategies."
+
+  - alert: OptionsDataLatencyHigh
+    expr: trading_end_to_end_latency_seconds{data_source="options"} > 5.0
+    for: 3m
+    labels:
+      severity: warning
+      service: options
+      alert_type: latency
+    annotations:
+      summary: "Options data latency is high"
+      description: "Options data latency is {{ $value }}s, which may impact volatility-based strategies."
+
+  # Stage-specific Latency Alerts
+  - alert: DataIngestionSlow
+    expr: trading_stage_latency_seconds{stage="source_ingestion"} > 0.5
+    for: 2m
+    labels:
+      severity: warning
+      stage: ingestion
+      alert_type: latency
+    annotations:
+      summary: "Data ingestion is slow for {{ $labels.data_source }}"
+      description: "Source ingestion latency is {{ $value }}s for {{ $labels.data_source }}, indicating potential data provider issues."
+
+  - alert: FeatureEngineeringLatencyHigh
+    expr: trading_stage_latency_seconds{stage="feature_engineering"} > 2.0
+    for: 3m
+    labels:
+      severity: warning
+      stage: feature_engineering
+      alert_type: latency
+    annotations:
+      summary: "Feature engineering latency is high"
+      description: "Feature engineering taking {{ $value }}s for {{ $labels.data_source }}, may need optimization."
+
+  - alert: ModelInferenceLatencyHigh
+    expr: trading_stage_latency_seconds{stage="model_inference"} > 1.0
+    for: 2m
+    labels:
+      severity: warning
+      stage: model_inference
+      alert_type: latency
+    annotations:
+      summary: "Model inference latency is high"
+      description: "Model inference taking {{ $value }}s for {{ $labels.data_source }}, check model performance."
+
+  # SLA Compliance Alerts
+  - alert: SLAComplianceBreached
+    expr: trading_sla_compliance == 0
+    for: 1m
+    labels:
+      severity: critical
+      alert_type: sla_breach
+    annotations:
+      summary: "SLA compliance breached for {{ $labels.data_source }}"
+      description: "{{ $labels.data_source }} is not meeting SLA requirements, immediate attention required."
+
+  # Data Freshness Alerts
+  - alert: DataFreshnessIssue
+    expr: increase(trading_stage_latency_seconds_count{stage="source_ingestion"}[5m]) == 0
+    for: 5m
+    labels:
+      severity: warning
+      alert_type: data_freshness
+    annotations:
+      summary: "No new data ingested for {{ $labels.data_source }}"
+      description: "{{ $labels.data_source }} has not ingested new data in the last 5 minutes, check data sources."
+
+  # Alert Rate Monitoring
+  - alert: LatencyAlertStorm
+    expr: increase(trading_latency_alerts_total[5m]) > 10
+    for: 2m
+    labels:
+      severity: critical
+      alert_type: alert_storm
+    annotations:
+      summary: "High volume of latency alerts detected"
+      description: "More than 10 latency alerts in 5 minutes, indicating system-wide performance issues."
+
+- name: performance_impact_alerts
+  rules:
+  # Alpha Generation Impact Alerts
+  - alert: HighFrequencyStrategiesImpacted
+    expr: trading_end_to_end_latency_seconds{data_source="market_data"} > 0.5
+    for: 30s
+    labels:
+      severity: critical
+      impact: high_frequency_strategies
+      alert_type: alpha_impact
+    annotations:
+      summary: "High-frequency strategies significantly impacted"
+      description: "Market data latency of {{ $value }}s is severely impacting high-frequency trading strategies."
+
+  - alert: EventDrivenStrategiesImpacted
+    expr: trading_end_to_end_latency_seconds{data_source="sentiment"} > 15.0 or trading_end_to_end_latency_seconds{data_source="news"} > 15.0
+    for: 2m
+    labels:
+      severity: warning
+      impact: event_driven_strategies
+      alert_type: alpha_impact
+    annotations:
+      summary: "Event-driven strategies may be impacted"
+      description: "Sentiment/news data latency of {{ $value }}s may delay event-driven strategy execution."
+
+  - alert: VolatilityStrategiesImpacted
+    expr: trading_end_to_end_latency_seconds{data_source="options"} > 3.0
+    for: 2m
+    labels:
+      severity: warning
+      impact: volatility_strategies
+      alert_type: alpha_impact
+    annotations:
+      summary: "Volatility-based strategies may be impacted"
+      description: "Options data latency of {{ $value }}s may affect volatility-based trading strategies."
+
+- name: system_health_alerts  
+  rules:
+  # Pipeline Health Monitoring
+  - alert: DataPipelineStalled
+    expr: absent_over_time(trading_stage_latency_seconds[10m])
+    for: 5m
+    labels:
+      severity: critical
+      alert_type: pipeline_health
+    annotations:
+      summary: "Data pipeline appears stalled"
+      description: "No latency metrics received for 10 minutes, data pipeline may be stalled."
+
+  - alert: LatencyMonitorDown
+    expr: up{job="latency-monitor"} == 0
+    for: 1m
+    labels:
+      severity: critical
+      service: latency_monitor
+      alert_type: service_down
+    annotations:
+      summary: "Latency monitoring service is down"
+      description: "The latency monitoring service is not responding, latency visibility is compromised."
+
+  # Resource Usage Alerts
+  - alert: LatencyMonitorHighMemory
+    expr: container_memory_usage_bytes{name="latency-monitor"} / container_spec_memory_limit_bytes{name="latency-monitor"} > 0.8
+    for: 5m
+    labels:
+      severity: warning
+      service: latency_monitor
+      alert_type: resource_usage
+    annotations:
+      summary: "Latency monitor high memory usage"
+      description: "Latency monitor using {{ $value | humanizePercentage }} of allocated memory."
+
+  - alert: PrometheusHighMemory
+    expr: container_memory_usage_bytes{name="prometheus"} / container_spec_memory_limit_bytes{name="prometheus"} > 0.85
+    for: 5m
+    labels:
+      severity: warning
+      service: prometheus
+      alert_type: resource_usage
+    annotations:
+      summary: "Prometheus high memory usage"
+      description: "Prometheus using {{ $value | humanizePercentage }} of allocated memory, may need scaling."

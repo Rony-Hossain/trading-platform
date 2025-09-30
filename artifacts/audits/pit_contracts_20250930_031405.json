@@ -1,0 +1,61 @@
+{
+  "timestamp": "2025-09-30T03:14:05.287090",
+  "compliance_status": "FAIL",
+  "summary": {
+    "total_contracts": 1,
+    "violations": 1,
+    "warnings": 0,
+    "critical_violations": 1,
+    "high_violations": 0
+  },
+  "violations": [
+    {
+      "type": "missing_contracts",
+      "severity": "critical",
+      "count": 321,
+      "features": [
+        "sentiment_confidence",
+        "liquidity_score",
+        "hl_spread",
+        "current_volume",
+        "impact_score",
+        "atm_iv",
+        "vix_level",
+        "ao_score",
+        "technical_analysis",
+        "sentiment_score_range"
+      ],
+      "message": "321 features found without contracts"
+    }
+  ],
+  "warnings": [],
+  "contracts": {
+    "timestamp": "2025-09-30T03:14:05.287090",
+    "total_contracts": 1,
+    "contracts_by_type": {
+      "macro": 1
+    },
+    "contracts_by_source": {
+      "yahoo": 1
+    },
+    "compliance_summary": {
+      "features_with_contracts": 1,
+      "features_missing_contracts": 0,
+      "total_violations_last_24h": 0
+    },
+    "contracts": [
+      {
+        "feature_name": "vix_close",
+        "feature_type": "macro",
+        "data_source": "yahoo",
+        "version": "1.0.0",
+        "arrival_latency_minutes": 1050,
+        "update_frequency": "daily",
+        "pii_classification": "none",
+        "created_by": "data_team",
+        "approved_by": "risk_manager",
+        "last_modified": "2025-09-30T03:14:05.052270"
+      }
+    ]
+  }
+}

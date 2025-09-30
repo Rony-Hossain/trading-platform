@@ -59,6 +59,34 @@ services:
     networks:
       - monitoring
 
+  latency-monitor:
+    build:
+      context: ./infrastructure/monitoring
+      dockerfile: Dockerfile.latency-monitor
+    container_name: trading-latency-monitor
+    ports:
+      - "8081:8080"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://trading_user:trading_pass@postgres:5432/trading_db
+      - PROMETHEUS_GATEWAY_URL=http://pushgateway:9091
+    depends_on:
+      - redis
+      - postgres
+      - pushgateway
+    restart: unless-stopped
+    networks:
+      - monitoring
+
+  pushgateway:
+    image: prom/pushgateway:latest
+    container_name: trading-pushgateway
+    ports:
+      - "9091:9091"
+    restart: unless-stopped
+    networks:
+      - monitoring
+
   node-exporter:
     image: prom/node-exporter:latest
     container_name: trading-node-exporter

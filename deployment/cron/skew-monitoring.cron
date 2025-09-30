@@ -1,0 +1,32 @@
+# Skew Monitoring Cron Jobs
+# Place this file in /etc/cron.d/ or add entries to user crontab
+# Runs nightly skew detection at 2:00 AM EST/EDT
+
+# Set environment variables
+PATH=/usr/local/bin:/usr/bin:/bin
+TRADING_PLATFORM_ROOT=/opt/trading-platform
+PYTHONPATH=/opt/trading-platform:/opt/trading-platform/services/analysis-service
+DATABASE_URL=postgresql+asyncpg://trading_user:trading_pass@localhost:5432/trading_db
+REDIS_URL=redis://localhost:6379
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+ALERT_EMAIL=trading-alerts@yourcompany.com
+
+# Nightly skew monitoring - runs at 2:00 AM EST every day
+0 2 * * * trading cd $TRADING_PLATFORM_ROOT && python scripts/nightly_skew_monitor.py >> logs/skew_monitoring.log 2>&1
+
+# Weekly comprehensive report - runs at 3:00 AM EST every Sunday
+0 3 * * 0 trading cd $TRADING_PLATFORM_ROOT && python scripts/nightly_skew_monitor.py --verbose >> logs/weekly_skew_report.log 2>&1
+
+# Refresh materialized view every 6 hours
+0 */6 * * * trading cd $TRADING_PLATFORM_ROOT && psql $DATABASE_URL -c "SELECT refresh_strategy_performance_summary();" >> logs/mv_refresh.log 2>&1
+
+# Clean up old logs (keep 30 days)
+0 4 * * * trading find $TRADING_PLATFORM_ROOT/logs -name "*.log" -mtime +30 -delete
+
+# Health check - every 15 minutes during market hours (9:30 AM - 4:00 PM EST)
+*/15 9-16 * * 1-5 trading cd $TRADING_PLATFORM_ROOT && python scripts/health_check.py --component skew_monitoring --quiet
+
+# Alert escalation check - runs every hour during market hours
+0 9-16 * * 1-5 trading cd $TRADING_PLATFORM_ROOT && python scripts/alert_escalation_check.py >> logs/alert_escalation.log 2>&1

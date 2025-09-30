@@ -18,6 +18,14 @@ from .services.multi_factor_analysis import MultiFactorAnalysis
 from typing import Optional
 import os
 from .services.composite_algo import CompositeAlgo
+from .api.event_analysis import router as event_analysis_router
+from .api.validation import router as validation_router
+from .api.volatility_thresholds import router as volatility_thresholds_router
+from .api.catalyst_triggers import router as catalyst_triggers_router
+from .api.gap_trading import router as gap_trading_router
+from .api.market_regime import router as market_regime_router
+from .api.event_backtest import router as event_backtest_router
+from .api.execution_modeling import router as execution_modeling_router
 import os
 
 # Configure logging
@@ -57,6 +65,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include routers
+app.include_router(event_analysis_router)
+app.include_router(validation_router)
+app.include_router(volatility_thresholds_router)
+app.include_router(catalyst_triggers_router)
+app.include_router(gap_trading_router)
+app.include_router(market_regime_router)
+app.include_router(event_backtest_router)
+app.include_router(execution_modeling_router)
 
 # Pydantic models
 class AnalysisRequest(BaseModel):

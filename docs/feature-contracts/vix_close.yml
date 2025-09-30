@@ -1,0 +1,45 @@
+# VIX Fear Index Feature Contract
+feature_name: "vix_close"
+feature_type: "macro"
+data_source: "yahoo"
+version: "1.0.0"
+
+# Point-in-Time Constraints
+as_of_ts_rule: "T+1 09:30 ET"  # Available next trading day at market open
+effective_ts_rule: "T 16:00 ET"  # VIX close value from previous day
+arrival_latency_minutes: 1050  # 17.5 hours (overnight + 30 min processing)
+point_in_time_rule: "No access to T+0 VIX close until T+1 market open"
+
+# Data Quality & SLA  
+vendor_sla:
+  availability: 99.9
+  latency_minutes: 15
+  quality: 99.99
+revision_policy:
+  revision_frequency: "never"
+  revision_window_days: 0
+  notification_method: "none"
+
+# Business Logic
+computation_logic: "Direct feed from CBOE via Yahoo Finance"
+dependencies: []
+lookback_period_days: 365
+update_frequency: "daily"
+
+# Validation & Monitoring
+validation_rules:
+  valid_range: [5.0, 80.0]
+  null_handling: "forward_fill_max_3_days"
+  outlier_detection: "3_sigma_rolling_30d"
+  monitoring_alerts: 
+    - "null_for_2_days"
+    - "outside_historical_range"
+    - "latency_exceed_sla"
+
+# Compliance & Audit
+pii_classification: "none"
+regulatory_notes: "Public market data, no restrictions"
+audit_trail: "git_commits + mlflow_tags"
+retention_policy: "7_years"
+created_by: "data_team"
+approved_by: "risk_manager"

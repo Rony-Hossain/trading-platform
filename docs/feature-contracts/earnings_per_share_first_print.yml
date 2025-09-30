@@ -1,0 +1,46 @@
+# Earnings Per Share (First Print) Feature Contract
+feature_name: "earnings_per_share_first_print"
+feature_type: "fundamental"
+data_source: "sec_edgar"
+version: "1.0.0"
+
+# Point-in-Time Constraints
+as_of_ts_rule: "T+45 days 00:00 ET"  # Available 45 days after report date
+effective_ts_rule: "report_date 23:59 ET"  # Based on quarter/year end date
+arrival_latency_minutes: 64800  # 45 days * 24 hours * 60 minutes
+point_in_time_rule: "Use only first-print fundamentals data, no revisions or amendments. 45-day lag prevents look-ahead bias."
+
+# Data Quality & SLA  
+vendor_sla:
+  availability: 99.5
+  latency_minutes: 4320  # 3 days max filing delay
+  quality: 99.9
+revision_policy:
+  revision_frequency: "never"
+  revision_window_days: 0
+  notification_method: "none"
+
+# Business Logic
+computation_logic: "Raw earnings per share from first SEC filing (10-K/10-Q), no amendments or restatements"
+dependencies: []
+lookback_period_days: 1095  # 3 years of quarterly data
+update_frequency: "quarterly"
+
+# Validation & Monitoring
+validation_rules:
+  valid_range: [-50.0, 200.0]  # Reasonable EPS range
+  null_handling: "reject"
+  outlier_detection: "3_sigma_rolling_8q"
+  monitoring_alerts: 
+    - "null_for_1_quarter"
+    - "outside_historical_range" 
+    - "filing_lag_exceed_45d"
+    - "amendment_detected"
+
+# Compliance & Audit
+pii_classification: "none"
+regulatory_notes: "SEC fundamentals data, public information. Must maintain separation from revised data."
+audit_trail: "git_commits + database_access_log + fundamentals_versioning_service"
+retention_policy: "7_years"
+created_by: "fundamentals_team"
+approved_by: "data_governance_committee"
