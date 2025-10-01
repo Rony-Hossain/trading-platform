@@ -13,8 +13,7 @@ import httpx
 import logging
 
 from ..models.portfolio import (
-    Portfolio, Position, Transaction, PerformanceSnapshot, 
-    WatchlistItem, TransactionType, AssetType
+    Portfolio, Position, Watchlist, WatchlistItem
 )
 from ..models.schemas import (
     PortfolioCreate, PortfolioUpdate, TransactionCreate,

@@ -1,5 +1,5 @@
 """
-Database configuration for Portfolio Service
+Database configuration for Strategy Service
 """
 
 import os
@@ -47,5 +47,5 @@ def create_tables():
 
 def drop_tables():
     """Drop all tables"""
-    from ..models.portfolio import Base
-    Base.metadata.drop_all(bind=engine)
+    # Skip table dropping for now
+    pass

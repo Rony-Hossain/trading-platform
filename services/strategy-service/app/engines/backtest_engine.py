@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 import quantstats as qs
 import empyrical
 
-from ..models.schemas import (
+from ..schemas import (
     Backtest, BacktestCreate, BacktestResult, Trade, Position,
     PerformanceMetrics, OptimizationRequest, RiskMetrics
 )

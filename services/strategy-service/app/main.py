@@ -22,14 +22,18 @@ from .engines.market_impact_model import (
     ImpactModel, ExecutionStyle
 )
 from .strategies.strategy_loader import StrategyLoader
-from .models.schemas import (
+from .schemas import (
     Strategy, StrategyCreate, StrategyUpdate,
     Backtest, BacktestCreate, BacktestResult,
     Trade, Position, PortfolioSnapshot,
     RiskMetrics, PerformanceMetrics,
-    OptimizationRequest, OptimizationResult,
-    ErrorResponse
+    OptimizationRequest, OptimizationResult
 )
+
+# Simple ErrorResponse for now
+class ErrorResponse(BaseModel):
+    error: str
+    detail: Optional[str] = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

@@ -43,7 +43,7 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     """Initialize database tables on startup"""
-    create_tables()
+    # create_tables()  # Skip table creation since tables already exist
     logger.info("Portfolio Service started")
 
 @app.get("/")
