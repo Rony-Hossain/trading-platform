@@ -1,837 +1,777 @@
 """
-Statistical Significance Testing Framework
-
-Implements sophisticated statistical tests for trading strategy evaluation:
-- White's Reality Check / Superior Predictive Ability (SPA) test
-- Deflated Sharpe Ratio (DSR) for multiple testing correction
-- Probability of Backtest Overfitting (PBO) estimation
-- Cluster-robust statistics for correlated returns
-
-References:
-- White (2000): A Reality Check for Data Snooping
-- Hansen (2005): A Test for Superior Predictive Ability  
-- Bailey & Lopez de Prado (2014): The Deflated Sharpe Ratio
-- Bailey et al. (2017): The Probability of Backtest Overfitting
+Statistical Significance Testing for Trading Strategies
+Implements White's Reality Check, SPA, Deflated Sharpe Ratio, and PBO
 """
 
 import numpy as np
 import pandas as pd
-from typing import Dict, List, Tuple, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
+from enum import Enum
+import logging
 from scipy import stats
-from scipy.stats import norm, t as t_dist
 from scipy.optimize import minimize_scalar
 import warnings
-from datetime import datetime
-import logging
+from concurrent.futures import ProcessPoolExecutor
+import multiprocessing as mp
 
 logger = logging.getLogger(__name__)
 
 
+class TestMethod(Enum):
+    """Statistical test methods"""
+    WHITES_REALITY_CHECK = "whites_reality_check"
+    SPA = "spa"  # Superior Predictive Ability
+    STEPWISE_SPA = "stepwise_spa"
+    
+
+class BootstrapMethod(Enum):
+    """Bootstrap resampling methods"""
+    CIRCULAR_BLOCK = "circular_block"
+    STATIONARY_BLOCK = "stationary_block"
+    MOVING_BLOCK = "moving_block"
+
+
 @dataclass
 class SignificanceTestResult:
-    """Result container for significance tests."""
-    test_name: str
+    """Result of a significance test"""
     test_statistic: float
     p_value: float
-    critical_value: Optional[float]
-    is_significant: bool
-    confidence_level: float
-    additional_stats: Dict[str, float]
-    interpretation: str
-    timestamp: datetime
-
-
-@dataclass
-class SPATestResult:
-    """Superior Predictive Ability test result."""
-    spa_statistic: float
-    spa_p_value: float
-    rc_statistic: float  # Reality Check statistic
-    rc_p_value: float
-    bootstrap_iterations: int
-    benchmark_performance: float
-    best_strategy_performance: float
-    num_strategies: int
-    is_significant: bool
-    interpretation: str
+    method: str
+    n_strategies: int
+    n_bootstrap: int
+    best_strategy_index: Optional[int] = None
+    reject_null: Optional[bool] = None
+    confidence_level: float = 0.05
+    
+    def is_significant(self, alpha: float = None) -> bool:
+        """Check if result is statistically significant"""
+        alpha = alpha or self.confidence_level
+        return self.p_value < alpha
 
 
 @dataclass
 class DeflatedSharpeResult:
-    """Deflated Sharpe Ratio test result."""
-    observed_sharpe: float
+    """Result of Deflated Sharpe Ratio calculation"""
+    sharpe_ratio: float
     deflated_sharpe: float
     p_value: float
-    trials: int
-    length: int
-    skewness: float
-    kurtosis: float
-    is_significant: bool
-    interpretation: str
+    n_trials: int
+    avg_correlation: float
+    reject_null: bool
+    
+    def is_significant(self, alpha: float = 0.05) -> bool:
+        """Check if Sharpe ratio is statistically significant"""
+        return self.p_value < alpha
 
 
 @dataclass
 class PBOResult:
-    """Probability of Backtest Overfitting result."""
-    pbo_estimate: float
-    phi_estimate: float
-    logits: np.ndarray
-    omega_matrix: np.ndarray
-    is_overfitted: bool
-    max_pbo_threshold: float
-    interpretation: str
+    """Probability of Backtest Overfitting result"""
+    pbo: float
+    n_strategies: int
+    oos_performance_rank: float
+    is_performance_rank: float
+    reject_null: bool
+    
+    def is_overfitted(self, threshold: float = 0.2) -> bool:
+        """Check if backtest shows signs of overfitting"""
+        return self.pbo > threshold
 
 
-class WhiteRealityCheck:
+class WhitesRealityCheck:
     """
-    Implementation of White's Reality Check and Hansen's SPA test.
-    
-    Tests whether the best performing strategy is significantly better 
-    than a benchmark after accounting for data snooping bias.
+    Implementation of White's Reality Check for data snooping
+    Tests null hypothesis that best strategy has no superior performance
     """
     
-    def __init__(self, benchmark_returns: np.ndarray, strategy_returns: np.ndarray, 
-                 bootstrap_iterations: int = 10000, block_length: Optional[int] = None):
+    def __init__(self, bootstrap_method: BootstrapMethod = BootstrapMethod.CIRCULAR_BLOCK):
+        self.bootstrap_method = bootstrap_method
+    
+    def test(self, 
+             returns_matrix: np.ndarray,
+             benchmark_returns: np.ndarray = None,
+             n_bootstrap: int = 2000,
+             block_size: int = None,
+             alpha: float = 0.05) -> SignificanceTestResult:
         """
-        Initialize the Reality Check test.
+        Perform White's Reality Check test
         
         Args:
-            benchmark_returns: Returns of benchmark strategy
-            strategy_returns: Returns matrix (strategies x time)
-            bootstrap_iterations: Number of bootstrap iterations
-            block_length: Block length for stationary bootstrap (auto if None)
-        """
-        self.benchmark_returns = np.array(benchmark_returns)
-        self.strategy_returns = np.array(strategy_returns)
-        if self.strategy_returns.ndim == 1:
-            self.strategy_returns = self.strategy_returns.reshape(1, -1)
-        
-        self.n_strategies, self.n_periods = self.strategy_returns.shape
-        self.bootstrap_iterations = bootstrap_iterations
-        self.block_length = block_length or self._optimal_block_length()
-        
-        # Calculate performance differences
-        self.performance_diffs = self._calculate_performance_differences()
-        
-    def _optimal_block_length(self) -> int:
-        """Calculate optimal block length using Politis & White (2004) method."""
-        # Simplified estimation - can be enhanced with more sophisticated methods
-        return max(1, int(np.ceil(self.n_periods ** (1/3))))
-    
-    def _calculate_performance_differences(self) -> np.ndarray:
-        """Calculate performance differences between strategies and benchmark."""
-        benchmark_perf = np.mean(self.benchmark_returns)
-        strategy_perfs = np.mean(self.strategy_returns, axis=1)
-        return strategy_perfs - benchmark_perf
-    
-    def _stationary_bootstrap(self, data: np.ndarray) -> np.ndarray:
-        """
-        Generate stationary bootstrap sample.
-        
-        Args:
-            data: Time series data
+            returns_matrix: (T x N) matrix of strategy returns
+            benchmark_returns: (T,) benchmark returns to compare against
+            n_bootstrap: Number of bootstrap samples
+            block_size: Block size for bootstrap (auto if None)
+            alpha: Significance level
             
         Returns:
-            Bootstrap sample of same length
+            SignificanceTestResult with test statistics and p-value
         """
-        n = len(data)
-        bootstrap_sample = np.zeros(n)
+        T, N = returns_matrix.shape
         
-        i = 0
-        while i < n:
-            # Random starting point
-            start = np.random.randint(0, n)
-            
-            # Geometric block length
-            block_len = np.random.geometric(1 / self.block_length)
-            block_len = min(block_len, n - i)
-            
-            # Copy block (with wrap-around)
-            for j in range(block_len):
-                bootstrap_sample[i + j] = data[(start + j) % n]
-            
-            i += block_len
-            
-        return bootstrap_sample
-    
-    def _bootstrap_max_statistic(self) -> np.ndarray:
-        """Generate bootstrap distribution of maximum test statistic."""
-        max_statistics = np.zeros(self.bootstrap_iterations)
+        if benchmark_returns is None:
+            benchmark_returns = np.zeros(T)
         
-        for b in range(self.bootstrap_iterations):
-            # Bootstrap benchmark returns
-            bootstrap_benchmark = self._stationary_bootstrap(self.benchmark_returns)
-            
-            # Bootstrap strategy returns
-            bootstrap_strategies = np.zeros_like(self.strategy_returns)
-            for s in range(self.n_strategies):
-                bootstrap_strategies[s] = self._stationary_bootstrap(self.strategy_returns[s])
-            
-            # Calculate bootstrap performance differences
-            benchmark_perf = np.mean(bootstrap_benchmark)
-            strategy_perfs = np.mean(bootstrap_strategies, axis=1)
-            bootstrap_diffs = strategy_perfs - benchmark_perf
-            
-            # Center the bootstrap differences
-            centered_diffs = bootstrap_diffs - self.performance_diffs
-            
-            # Calculate test statistics (t-statistics)
-            test_stats = np.zeros(self.n_strategies)
-            for s in range(self.n_strategies):
-                strategy_benchmark_diff = bootstrap_strategies[s] - bootstrap_benchmark
-                if np.std(strategy_benchmark_diff) > 0:
-                    test_stats[s] = (centered_diffs[s] * np.sqrt(self.n_periods) / 
-                                   np.std(strategy_benchmark_diff))
-            
-            max_statistics[b] = np.max(test_stats)
-            
-        return max_statistics
-    
-    def run_test(self, confidence_level: float = 0.95) -> SPATestResult:
-        """
-        Run the SPA test.
+        # Calculate excess returns
+        excess_returns = returns_matrix - benchmark_returns.reshape(-1, 1)
         
-        Args:
-            confidence_level: Confidence level for the test
-            
-        Returns:
-            SPATestResult object with test results
-        """
-        # Calculate original test statistics
-        test_statistics = np.zeros(self.n_strategies)
+        # Calculate mean excess returns
+        mean_excess = np.mean(excess_returns, axis=0)
         
-        for s in range(self.n_strategies):
-            strategy_benchmark_diff = self.strategy_returns[s] - self.benchmark_returns
-            if np.std(strategy_benchmark_diff) > 0:
-                test_statistics[s] = (self.performance_diffs[s] * np.sqrt(self.n_periods) / 
-                                    np.std(strategy_benchmark_diff))
+        # Find best performing strategy
+        best_idx = np.argmax(mean_excess)
+        test_stat = mean_excess[best_idx]
         
-        # Reality Check statistic (original White test)
-        rc_statistic = np.max(test_statistics)
+        # Bootstrap procedure
+        if block_size is None:
+            block_size = int(np.ceil(T ** (1/3)))
         
-        # SPA statistic (Hansen improvement)
-        positive_stats = test_statistics[test_statistics > 0]
-        spa_statistic = np.max(positive_stats) if len(positive_stats) > 0 else 0
+        bootstrap_stats = self._bootstrap_test_statistic(
+            excess_returns, n_bootstrap, block_size
+        )
         
-        # Generate bootstrap distribution
-        bootstrap_max_stats = self._bootstrap_max_statistic()
+        # Calculate p-value
+        p_value = np.mean(bootstrap_stats >= test_stat)
         
-        # Calculate p-values
-        rc_p_value = np.mean(bootstrap_max_stats >= rc_statistic)
-        spa_p_value = np.mean(bootstrap_max_stats >= spa_statistic)
-        
-        # Determine significance
-        alpha = 1 - confidence_level
-        is_significant = spa_p_value < alpha
-        
-        # Generate interpretation
-        interpretation = self._generate_interpretation(spa_p_value, alpha, 
-                                                     self.n_strategies, is_significant)
-        
-        return SPATestResult(
-            spa_statistic=spa_statistic,
-            spa_p_value=spa_p_value,
-            rc_statistic=rc_statistic,
-            rc_p_value=rc_p_value,
-            bootstrap_iterations=self.bootstrap_iterations,
-            benchmark_performance=np.mean(self.benchmark_returns),
-            best_strategy_performance=np.max(np.mean(self.strategy_returns, axis=1)),
-            num_strategies=self.n_strategies,
-            is_significant=is_significant,
-            interpretation=interpretation
+        return SignificanceTestResult(
+            test_statistic=test_stat,
+            p_value=p_value,
+            method="whites_reality_check",
+            n_strategies=N,
+            n_bootstrap=n_bootstrap,
+            best_strategy_index=int(best_idx),
+            reject_null=p_value < alpha,
+            confidence_level=alpha
         )
     
-    def _generate_interpretation(self, p_value: float, alpha: float, 
-                               n_strategies: int, is_significant: bool) -> str:
-        """Generate interpretation of test results."""
-        if is_significant:
-            return (f"SPA test (p={p_value:.4f}) indicates significant outperformance "
-                   f"after correcting for data snooping across {n_strategies} strategies. "
-                   f"The best strategy likely has genuine predictive ability.")
+    def _bootstrap_test_statistic(self, 
+                                 excess_returns: np.ndarray,
+                                 n_bootstrap: int,
+                                 block_size: int) -> np.ndarray:
+        """Generate bootstrap distribution of test statistic"""
+        T, N = excess_returns.shape
+        bootstrap_stats = np.zeros(n_bootstrap)
+        
+        for i in range(n_bootstrap):
+            # Generate bootstrap sample
+            if self.bootstrap_method == BootstrapMethod.CIRCULAR_BLOCK:
+                bootstrap_sample = self._circular_block_bootstrap(
+                    excess_returns, block_size
+                )
+            else:
+                bootstrap_sample = self._stationary_block_bootstrap(
+                    excess_returns, block_size
+                )
+            
+            # Center the bootstrap sample to impose null hypothesis
+            bootstrap_sample_centered = bootstrap_sample - np.mean(bootstrap_sample, axis=0)
+            
+            # Calculate test statistic for bootstrap sample
+            mean_bootstrap = np.mean(bootstrap_sample_centered, axis=0)
+            bootstrap_stats[i] = np.max(mean_bootstrap)
+        
+        return bootstrap_stats
+    
+    def _circular_block_bootstrap(self, 
+                                 data: np.ndarray,
+                                 block_size: int) -> np.ndarray:
+        """Circular block bootstrap resampling"""
+        T, N = data.shape
+        n_blocks = int(np.ceil(T / block_size))
+        
+        # Create circular version of data
+        circular_data = np.vstack([data, data[:block_size-1]])
+        
+        # Sample block starting points
+        start_indices = np.random.randint(0, T, n_blocks)
+        
+        # Construct bootstrap sample
+        bootstrap_sample = []
+        for start_idx in start_indices:
+            block = circular_data[start_idx:start_idx + block_size]
+            bootstrap_sample.append(block)
+        
+        bootstrap_sample = np.vstack(bootstrap_sample)[:T]
+        return bootstrap_sample
+    
+    def _stationary_block_bootstrap(self, 
+                                   data: np.ndarray,
+                                   avg_block_size: int) -> np.ndarray:
+        """Stationary block bootstrap with geometric block lengths"""
+        T, N = data.shape
+        bootstrap_sample = []
+        current_length = 0
+        
+        while current_length < T:
+            # Geometric block length
+            block_length = np.random.geometric(1/avg_block_size)
+            start_idx = np.random.randint(0, T)
+            
+            # Extract block (with wraparound)
+            for i in range(block_length):
+                if current_length >= T:
+                    break
+                idx = (start_idx + i) % T
+                bootstrap_sample.append(data[idx])
+                current_length += 1
+        
+        return np.array(bootstrap_sample[:T])
+
+
+class SuperiorPredictiveAbility:
+    """
+    Implementation of Hansen's Superior Predictive Ability (SPA) test
+    More powerful than White's Reality Check, controls for poor performing strategies
+    """
+    
+    def __init__(self):
+        self.studentization_constant = 0.5
+    
+    def test(self, 
+             returns_matrix: np.ndarray,
+             benchmark_returns: np.ndarray = None,
+             n_bootstrap: int = 2000,
+             block_size: int = None,
+             alpha: float = 0.05,
+             studentize: bool = True) -> SignificanceTestResult:
+        """
+        Perform SPA test
+        
+        Args:
+            returns_matrix: (T x N) matrix of strategy returns
+            benchmark_returns: (T,) benchmark returns
+            n_bootstrap: Number of bootstrap samples
+            block_size: Block size for bootstrap
+            alpha: Significance level
+            studentize: Whether to studentize the test statistic
+            
+        Returns:
+            SignificanceTestResult
+        """
+        T, N = returns_matrix.shape
+        
+        if benchmark_returns is None:
+            benchmark_returns = np.zeros(T)
+        
+        # Calculate excess returns
+        excess_returns = returns_matrix - benchmark_returns.reshape(-1, 1)
+        
+        # Calculate sample statistics
+        mean_excess = np.mean(excess_returns, axis=0)
+        
+        if studentize:
+            # Calculate standard errors
+            std_errors = np.std(excess_returns, axis=0, ddof=1) / np.sqrt(T)
+            # Avoid division by zero
+            std_errors = np.maximum(std_errors, 1e-8)
+            t_stats = mean_excess / std_errors
+            test_stat = np.max(t_stats)
         else:
-            return (f"SPA test (p={p_value:.4f}) suggests the best strategy's outperformance "
-                   f"could be due to data snooping across {n_strategies} strategies. "
-                   f"No evidence of genuine predictive ability.")
+            test_stat = np.max(mean_excess)
+        
+        # Bootstrap procedure
+        if block_size is None:
+            block_size = int(np.ceil(T ** (1/3)))
+        
+        bootstrap_stats = self._spa_bootstrap(
+            excess_returns, n_bootstrap, block_size, studentize
+        )
+        
+        # Calculate p-value
+        p_value = np.mean(bootstrap_stats >= test_stat)
+        
+        best_idx = np.argmax(mean_excess)
+        
+        return SignificanceTestResult(
+            test_statistic=test_stat,
+            p_value=p_value,
+            method="spa",
+            n_strategies=N,
+            n_bootstrap=n_bootstrap,
+            best_strategy_index=int(best_idx),
+            reject_null=p_value < alpha,
+            confidence_level=alpha
+        )
+    
+    def _spa_bootstrap(self, 
+                      excess_returns: np.ndarray,
+                      n_bootstrap: int,
+                      block_size: int,
+                      studentize: bool) -> np.ndarray:
+        """SPA bootstrap procedure with re-centering"""
+        T, N = excess_returns.shape
+        bootstrap_stats = np.zeros(n_bootstrap)
+        
+        # Calculate original sample means and std errors
+        original_means = np.mean(excess_returns, axis=0)
+        original_stds = np.std(excess_returns, axis=0, ddof=1) / np.sqrt(T)
+        original_stds = np.maximum(original_stds, 1e-8)
+        
+        wrc = WhitesRealityCheck()
+        
+        for i in range(n_bootstrap):
+            # Generate bootstrap sample
+            bootstrap_sample = wrc._circular_block_bootstrap(excess_returns, block_size)
+            
+            # Re-center bootstrap sample for SPA
+            bootstrap_means = np.mean(bootstrap_sample, axis=0)
+            
+            # SPA re-centering: subtract max(0, original_mean) to impose null
+            recentering = np.maximum(original_means, 0)
+            bootstrap_recentered = bootstrap_sample - recentering
+            
+            # Calculate bootstrap test statistic
+            bootstrap_means_recentered = np.mean(bootstrap_recentered, axis=0)
+            
+            if studentize:
+                bootstrap_stds = np.std(bootstrap_recentered, axis=0, ddof=1) / np.sqrt(T)
+                bootstrap_stds = np.maximum(bootstrap_stds, 1e-8)
+                t_stats_bootstrap = bootstrap_means_recentered / bootstrap_stds
+                bootstrap_stats[i] = np.max(t_stats_bootstrap)
+            else:
+                bootstrap_stats[i] = np.max(bootstrap_means_recentered)
+        
+        return bootstrap_stats
+
+
+class StepwiseSPA:
+    """
+    Stepwise SPA test for identifying multiple superior strategies
+    """
+    
+    def __init__(self):
+        self.spa = SuperiorPredictiveAbility()
+    
+    def test(self, 
+             returns_matrix: np.ndarray,
+             benchmark_returns: np.ndarray = None,
+             n_bootstrap: int = 2000,
+             alpha: float = 0.05,
+             max_steps: int = None) -> List[SignificanceTestResult]:
+        """
+        Perform stepwise SPA test
+        
+        Returns list of results, one for each step until no more significant strategies
+        """
+        if max_steps is None:
+            max_steps = returns_matrix.shape[1]  # Max number of strategies
+        
+        results = []
+        remaining_indices = list(range(returns_matrix.shape[1]))
+        
+        for step in range(max_steps):
+            if len(remaining_indices) == 0:
+                break
+            
+            # Test remaining strategies
+            current_returns = returns_matrix[:, remaining_indices]
+            
+            result = self.spa.test(
+                current_returns, 
+                benchmark_returns, 
+                n_bootstrap, 
+                alpha=alpha
+            )
+            
+            if not result.reject_null:
+                # No more significant strategies
+                break
+            
+            # Record result with original index
+            original_best_idx = remaining_indices[result.best_strategy_index]
+            result.best_strategy_index = original_best_idx
+            results.append(result)
+            
+            # Remove the identified superior strategy
+            remaining_indices.pop(result.best_strategy_index)
+        
+        return results
 
 
 class DeflatedSharpe:
     """
-    Implementation of the Deflated Sharpe Ratio test.
-    
-    Corrects Sharpe ratio for multiple testing and non-normal returns,
-    providing a more conservative estimate of strategy performance.
+    Implementation of Deflated Sharpe Ratio by López de Prado
+    Adjusts Sharpe ratio for multiple testing and non-normality
     """
     
     @staticmethod
-    def calculate_deflated_sharpe(returns: np.ndarray, trials: int, 
-                                 length: Optional[int] = None) -> DeflatedSharpeResult:
+    def calculate(returns: np.ndarray,
+                 n_trials: int,
+                 skewness: float = None,
+                 kurtosis: float = None,
+                 avg_correlation: float = 0.0,
+                 benchmark_sharpe: float = 0.0) -> DeflatedSharpeResult:
         """
-        Calculate the Deflated Sharpe Ratio.
+        Calculate Deflated Sharpe Ratio
         
         Args:
             returns: Strategy returns
-            trials: Number of trials/strategies tested
-            length: Sample length (uses actual length if None)
+            n_trials: Number of strategies tested
+            skewness: Returns skewness (calculated if None)
+            kurtosis: Returns excess kurtosis (calculated if None)
+            avg_correlation: Average correlation between strategies
+            benchmark_sharpe: Benchmark Sharpe ratio
             
         Returns:
-            DeflatedSharpeResult object
+            DeflatedSharpeResult
         """
-        returns = np.array(returns)
-        n = length or len(returns)
+        # Calculate basic statistics
+        T = len(returns)
+        mean_return = np.mean(returns)
+        std_return = np.std(returns, ddof=1)
+        sharpe_ratio = mean_return / std_return if std_return > 0 else 0
         
-        # Calculate observed Sharpe ratio
-        observed_sharpe = np.mean(returns) / np.std(returns, ddof=1) * np.sqrt(252)
+        if skewness is None:
+            skewness = stats.skew(returns)
+        if kurtosis is None:
+            kurtosis = stats.kurtosis(returns)  # Excess kurtosis
         
-        # Calculate moments
-        skewness = stats.skew(returns)
-        excess_kurtosis = stats.kurtosis(returns)
+        # Estimate parameters for multiple testing adjustment
+        variance_sharpe = DeflatedSharpe._variance_of_sharpe(T, skewness, kurtosis, sharpe_ratio)
         
-        # Calculate deflated Sharpe ratio
-        deflated_sharpe = DeflatedSharpe._deflate_sharpe_ratio(
-            observed_sharpe, n, trials, skewness, excess_kurtosis
-        )
-        
-        # Calculate p-value
-        p_value = 1 - norm.cdf(deflated_sharpe)
-        
-        # Determine significance
-        is_significant = p_value < 0.05
-        
-        # Generate interpretation
-        interpretation = DeflatedSharpe._generate_interpretation(
-            observed_sharpe, deflated_sharpe, p_value, trials, is_significant
-        )
-        
-        return DeflatedSharpeResult(
-            observed_sharpe=observed_sharpe,
-            deflated_sharpe=deflated_sharpe,
-            p_value=p_value,
-            trials=trials,
-            length=n,
-            skewness=skewness,
-            kurtosis=excess_kurtosis,
-            is_significant=is_significant,
-            interpretation=interpretation
-        )
-    
-    @staticmethod
-    def _deflate_sharpe_ratio(sharpe: float, n: int, trials: int, 
-                             skewness: float, kurtosis: float) -> float:
-        """
-        Calculate the deflated Sharpe ratio.
-        
-        Args:
-            sharpe: Observed Sharpe ratio
-            n: Sample length
-            trials: Number of trials
-            skewness: Returns skewness
-            kurtosis: Returns excess kurtosis
-            
-        Returns:
-            Deflated Sharpe ratio
-        """
         # Expected maximum Sharpe ratio under null
-        gamma = 0.5772156649  # Euler-Mascheroni constant
-        expected_max_sr = (1 - gamma) * norm.ppf(1 - 1/trials) + gamma * norm.ppf(1 - 1/(trials * np.e))
+        expected_max_sharpe = DeflatedSharpe._expected_maximum_sharpe(
+            n_trials, avg_correlation, variance_sharpe
+        )
         
-        # Variance of maximum Sharpe ratio
-        var_max_sr = (1 - gamma) * norm.ppf(1 - 1/trials)**2 + gamma * norm.ppf(1 - 1/(trials * np.e))**2 - expected_max_sr**2
-        var_max_sr += np.pi**2 / 6
-        
-        # Sharpe ratio adjustment for non-normality
-        sr_adjustment = (1 + (skewness * sharpe)/6 + ((kurtosis - 3) * sharpe**2)/24)
+        # Standard deviation of maximum Sharpe ratio
+        std_max_sharpe = np.sqrt(variance_sharpe)
         
         # Deflated Sharpe ratio
-        deflated_sr = (sharpe - expected_max_sr / np.sqrt(n)) / np.sqrt(var_max_sr / n) * sr_adjustment
-        
-        return deflated_sr
-    
-    @staticmethod
-    def _generate_interpretation(observed_sharpe: float, deflated_sharpe: float, 
-                               p_value: float, trials: int, is_significant: bool) -> str:
-        """Generate interpretation of deflated Sharpe ratio results."""
-        if is_significant:
-            return (f"Deflated Sharpe ratio {deflated_sharpe:.3f} (p={p_value:.4f}) "
-                   f"indicates significant performance after correcting for {trials} trials. "
-                   f"Original Sharpe ratio {observed_sharpe:.3f} is likely genuine.")
+        if std_max_sharpe > 0:
+            deflated_sharpe = (sharpe_ratio - expected_max_sharpe) / std_max_sharpe
         else:
-            return (f"Deflated Sharpe ratio {deflated_sharpe:.3f} (p={p_value:.4f}) "
-                   f"suggests observed Sharpe ratio {observed_sharpe:.3f} may be inflated "
-                   f"due to multiple testing across {trials} strategies.")
-
-
-class PBOEstimator:
-    """
-    Probability of Backtest Overfitting (PBO) estimator.
-    
-    Estimates the probability that an observed backtest performance
-    is due to overfitting rather than genuine predictive ability.
-    """
-    
-    def __init__(self, returns_matrix: np.ndarray, threshold: float = 0.0):
-        """
-        Initialize PBO estimator.
+            deflated_sharpe = 0
         
-        Args:
-            returns_matrix: Matrix of strategy returns (strategies x time)
-            threshold: Performance threshold (default 0 for positive returns)
-        """
-        self.returns_matrix = np.array(returns_matrix)
-        if self.returns_matrix.ndim == 1:
-            self.returns_matrix = self.returns_matrix.reshape(1, -1)
+        # P-value (one-tailed test)
+        p_value = 1 - stats.norm.cdf(deflated_sharpe)
         
-        self.n_strategies, self.n_periods = self.returns_matrix.shape
-        self.threshold = threshold
-        
-    def estimate_pbo(self, n_splits: int = 16) -> PBOResult:
-        """
-        Estimate the Probability of Backtest Overfitting.
-        
-        Args:
-            n_splits: Number of splits for combinatorial sampling
-            
-        Returns:
-            PBOResult object
-        """
-        # Generate combinatorial splits
-        splits = self._generate_combinatorial_splits(n_splits)
-        
-        # Calculate logits for each split
-        logits = self._calculate_logits(splits)
-        
-        # Estimate omega matrix (correlation matrix of logits)
-        omega_matrix = np.corrcoef(logits)
-        
-        # Calculate PBO estimate
-        pbo_estimate = self._calculate_pbo(logits)
-        
-        # Calculate phi (expected logit under null)
-        phi_estimate = np.mean(logits)
-        
-        # Determine if overfitted
-        max_pbo_threshold = 0.2  # Common threshold
-        is_overfitted = pbo_estimate > max_pbo_threshold
-        
-        # Generate interpretation
-        interpretation = self._generate_interpretation(pbo_estimate, max_pbo_threshold, 
-                                                     is_overfitted, self.n_strategies)
-        
-        return PBOResult(
-            pbo_estimate=pbo_estimate,
-            phi_estimate=phi_estimate,
-            logits=logits,
-            omega_matrix=omega_matrix,
-            is_overfitted=is_overfitted,
-            max_pbo_threshold=max_pbo_threshold,
-            interpretation=interpretation
+        return DeflatedSharpeResult(
+            sharpe_ratio=sharpe_ratio,
+            deflated_sharpe=deflated_sharpe,
+            p_value=p_value,
+            n_trials=n_trials,
+            avg_correlation=avg_correlation,
+            reject_null=p_value < 0.05
         )
     
-    def _generate_combinatorial_splits(self, n_splits: int) -> List[Tuple[np.ndarray, np.ndarray]]:
-        """Generate combinatorial splits of the data."""
-        splits = []
-        split_size = self.n_periods // 2
+    @staticmethod
+    def _variance_of_sharpe(T: int, skewness: float, kurtosis: float, sharpe: float) -> float:
+        """Calculate variance of Sharpe ratio estimator"""
+        # Mertens (2002) formula for variance of Sharpe ratio
+        variance = (1 + 0.5 * sharpe**2 - skewness * sharpe + (kurtosis/4) * sharpe**2) / T
+        return max(variance, 1e-8)  # Ensure positive
+    
+    @staticmethod
+    def _expected_maximum_sharpe(n_trials: int, avg_correlation: float, variance_sharpe: float) -> float:
+        """Expected maximum Sharpe ratio under null hypothesis"""
+        if n_trials <= 1:
+            return 0
         
-        for i in range(n_splits):
-            # Random split
-            indices = np.random.permutation(self.n_periods)
-            train_idx = indices[:split_size]
-            test_idx = indices[split_size:2*split_size]
-            
-            splits.append((train_idx, test_idx))
-            
-        return splits
-    
-    def _calculate_logits(self, splits: List[Tuple[np.ndarray, np.ndarray]]) -> np.ndarray:
-        """Calculate logits for each split."""
-        logits = np.zeros(len(splits))
+        # Effective number of independent trials
+        effective_n = n_trials * (1 - avg_correlation) / (1 + (n_trials - 1) * avg_correlation)
+        effective_n = max(effective_n, 1)
         
-        for i, (train_idx, test_idx) in enumerate(splits):
-            # In-sample performance
-            is_performance = np.mean(self.returns_matrix[:, train_idx], axis=1)
-            
-            # Select best strategy based on in-sample performance
-            best_strategy_idx = np.argmax(is_performance)
-            
-            # Out-of-sample performance of selected strategy
-            oos_performance = np.mean(self.returns_matrix[best_strategy_idx, test_idx])
-            
-            # Calculate logit
-            if oos_performance > self.threshold:
-                wins = 1
-            else:
-                wins = 0
-                
-            # Logit calculation (with small epsilon to avoid log(0))
-            epsilon = 1e-10
-            p = (wins + epsilon) / (1 + 2 * epsilon)
-            logits[i] = np.log(p / (1 - p))
-            
-        return logits
-    
-    def _calculate_pbo(self, logits: np.ndarray) -> float:
-        """Calculate PBO estimate from logits."""
-        # PBO is the probability that logit <= 0
-        return np.mean(logits <= 0)
-    
-    def _generate_interpretation(self, pbo: float, threshold: float, 
-                               is_overfitted: bool, n_strategies: int) -> str:
-        """Generate interpretation of PBO results."""
-        if is_overfitted:
-            return (f"PBO estimate {pbo:.3f} exceeds threshold {threshold}, "
-                   f"indicating high probability of overfitting across {n_strategies} strategies. "
-                   f"Backtest results may not generalize to live trading.")
+        # Expected maximum of standard normal variates
+        gamma = 0.5772156649015329  # Euler-Mascheroni constant
+        
+        if effective_n > 1:
+            expected_max = np.sqrt(2 * np.log(effective_n)) - (np.log(np.log(effective_n)) + gamma) / (2 * np.sqrt(2 * np.log(effective_n)))
         else:
-            return (f"PBO estimate {pbo:.3f} below threshold {threshold}, "
-                   f"suggesting lower probability of overfitting. "
-                   f"Backtest results more likely to be genuine.")
+            expected_max = 0
+        
+        return expected_max * np.sqrt(variance_sharpe)
 
 
-class ClusterRobustStatistics:
+class ProbabilityBacktestOverfitting:
     """
-    Cluster-robust statistical tests for correlated observations.
-    
-    Useful for event studies and other analyses where observations
-    may be clustered in time or by other characteristics.
+    Implementation of Probability of Backtest Overfitting (PBO) by López de Prado
+    Estimates probability that out-of-sample performance ranking differs from in-sample
     """
     
     @staticmethod
-    def cluster_robust_ttest(returns: np.ndarray, clusters: np.ndarray, 
-                           null_mean: float = 0.0) -> Tuple[float, float]:
+    def calculate(is_returns_matrix: np.ndarray,
+                 oos_returns_matrix: np.ndarray,
+                 n_bootstrap: int = 1000) -> PBOResult:
         """
-        Calculate cluster-robust t-test.
+        Calculate Probability of Backtest Overfitting
         
         Args:
-            returns: Return observations
-            clusters: Cluster assignments
-            null_mean: Null hypothesis mean
+            is_returns_matrix: (T_is x N) in-sample returns matrix
+            oos_returns_matrix: (T_oos x N) out-of-sample returns matrix
+            n_bootstrap: Number of bootstrap samples
             
         Returns:
-            Tuple of (t_statistic, p_value)
+            PBOResult
         """
-        returns = np.array(returns)
-        clusters = np.array(clusters)
+        N = is_returns_matrix.shape[1]
         
-        # Calculate cluster means
-        unique_clusters = np.unique(clusters)
-        cluster_means = np.array([np.mean(returns[clusters == c]) for c in unique_clusters])
+        if oos_returns_matrix.shape[1] != N:
+            raise ValueError("In-sample and out-of-sample must have same number of strategies")
         
-        # Number of clusters and observations
-        n_clusters = len(unique_clusters)
-        n_obs = len(returns)
+        # Calculate performance metrics (Sharpe ratios)
+        is_sharpe = ProbabilityBacktestOverfitting._calculate_sharpe_ratios(is_returns_matrix)
+        oos_sharpe = ProbabilityBacktestOverfitting._calculate_sharpe_ratios(oos_returns_matrix)
         
-        # Overall mean
-        overall_mean = np.mean(returns)
+        # Rank strategies by in-sample performance
+        is_ranks = stats.rankdata(-is_sharpe)  # Negative for descending order
+        oos_ranks = stats.rankdata(-oos_sharpe)
         
-        # Calculate cluster-robust standard error
-        cluster_variance = np.sum((cluster_means - overall_mean)**2) / (n_clusters - 1)
-        cluster_se = np.sqrt(cluster_variance / n_clusters)
+        # Find best in-sample strategy
+        best_is_strategy = np.argmax(is_sharpe)
         
-        # Cluster-robust t-statistic
-        t_stat = (overall_mean - null_mean) / cluster_se
+        # Calculate rank correlation
+        rank_correlation = stats.spearmanr(is_ranks, oos_ranks)[0]
         
-        # Degrees of freedom (number of clusters - 1)
-        df = n_clusters - 1
+        # Bootstrap procedure to estimate PBO
+        bootstrap_correlations = []
         
-        # Two-tailed p-value
-        p_value = 2 * (1 - t_dist.cdf(np.abs(t_stat), df))
+        for _ in range(n_bootstrap):
+            # Bootstrap in-sample returns
+            bootstrap_is = ProbabilityBacktestOverfitting._bootstrap_sample(is_returns_matrix)
+            bootstrap_is_sharpe = ProbabilityBacktestOverfitting._calculate_sharpe_ratios(bootstrap_is)
+            
+            # Calculate ranks
+            bootstrap_is_ranks = stats.rankdata(-bootstrap_is_sharpe)
+            
+            # Calculate correlation with out-of-sample ranks
+            bootstrap_corr = stats.spearmanr(bootstrap_is_ranks, oos_ranks)[0]
+            bootstrap_correlations.append(bootstrap_corr)
         
-        return t_stat, p_value
+        # PBO is probability that correlation is negative or zero
+        pbo = np.mean(np.array(bootstrap_correlations) <= 0)
+        
+        # Performance rank statistics
+        is_performance_rank = is_ranks[best_is_strategy] / N
+        oos_performance_rank = oos_ranks[best_is_strategy] / N
+        
+        return PBOResult(
+            pbo=pbo,
+            n_strategies=N,
+            oos_performance_rank=oos_performance_rank,
+            is_performance_rank=is_performance_rank,
+            reject_null=pbo > 0.5  # Null: no overfitting
+        )
     
     @staticmethod
-    def clustered_car_test(abnormal_returns: np.ndarray, event_dates: np.ndarray,
-                          event_window: Tuple[int, int] = (-1, 1)) -> Dict[str, float]:
-        """
-        Calculate clustered cumulative abnormal returns test.
+    def _calculate_sharpe_ratios(returns_matrix: np.ndarray) -> np.ndarray:
+        """Calculate Sharpe ratios for each strategy"""
+        means = np.mean(returns_matrix, axis=0)
+        stds = np.std(returns_matrix, axis=0, ddof=1)
         
-        Args:
-            abnormal_returns: Matrix of abnormal returns (events x time)
-            event_dates: Array of event dates
-            event_window: Event window (start, end) relative to event date
-            
-        Returns:
-            Dictionary with test statistics
-        """
-        # Calculate CARs for each event
-        start_offset, end_offset = event_window
-        cars = np.sum(abnormal_returns[:, start_offset:end_offset+1], axis=1)
+        # Avoid division by zero
+        stds = np.maximum(stds, 1e-8)
         
-        # Create time-based clusters (e.g., monthly)
-        clusters = np.array([pd.to_datetime(date).to_period('M').ordinal 
-                           for date in event_dates])
+        return means / stds
+    
+    @staticmethod
+    def _bootstrap_sample(data: np.ndarray) -> np.ndarray:
+        """Generate bootstrap sample using circular block bootstrap"""
+        T = data.shape[0]
+        block_size = max(1, int(T ** (1/3)))
         
-        # Calculate cluster-robust statistics
-        t_stat, p_value = ClusterRobustStatistics.cluster_robust_ttest(cars, clusters)
-        
-        # Additional statistics
-        mean_car = np.mean(cars)
-        std_car = np.std(cars, ddof=1)
-        n_events = len(cars)
-        n_clusters = len(np.unique(clusters))
-        
-        return {
-            'mean_car': mean_car,
-            'std_car': std_car,
-            't_stat_clustered': t_stat,
-            'p_value_clustered': p_value,
-            'n_events': n_events,
-            'n_clusters': n_clusters,
-            'car_window': f"({start_offset}, {end_offset})"
-        }
+        wrc = WhitesRealityCheck()
+        return wrc._circular_block_bootstrap(data, block_size)
 
 
 class SignificanceTestSuite:
     """
-    Comprehensive significance testing suite for trading strategies.
-    
-    Combines multiple tests to provide robust evaluation of strategy performance
-    while controlling for multiple testing, data snooping, and overfitting.
+    Comprehensive suite of significance tests for trading strategies
     """
     
-    def __init__(self, strategy_returns: np.ndarray, benchmark_returns: np.ndarray,
-                 strategy_names: Optional[List[str]] = None):
-        """
-        Initialize the test suite.
-        
-        Args:
-            strategy_returns: Matrix of strategy returns (strategies x time)
-            benchmark_returns: Benchmark returns
-            strategy_names: Optional names for strategies
-        """
-        self.strategy_returns = np.array(strategy_returns)
-        if self.strategy_returns.ndim == 1:
-            self.strategy_returns = self.strategy_returns.reshape(1, -1)
-            
-        self.benchmark_returns = np.array(benchmark_returns)
-        self.n_strategies, self.n_periods = self.strategy_returns.shape
-        
-        self.strategy_names = (strategy_names or 
-                             [f"Strategy_{i+1}" for i in range(self.n_strategies)])
+    def __init__(self):
+        self.wrc = WhitesRealityCheck()
+        self.spa = SuperiorPredictiveAbility()
+        self.stepwise_spa = StepwiseSPA()
     
-    def run_comprehensive_test(self, confidence_level: float = 0.95,
-                             bootstrap_iterations: int = 10000) -> Dict[str, any]:
+    def run_comprehensive_tests(self,
+                               returns_matrix: np.ndarray,
+                               benchmark_returns: np.ndarray = None,
+                               is_returns_matrix: np.ndarray = None,
+                               oos_returns_matrix: np.ndarray = None,
+                               n_bootstrap: int = 2000,
+                               alpha: float = 0.05) -> Dict:
         """
-        Run comprehensive significance testing suite.
+        Run comprehensive significance testing suite
         
         Args:
-            confidence_level: Confidence level for tests
-            bootstrap_iterations: Bootstrap iterations for SPA test
+            returns_matrix: Full period returns matrix
+            benchmark_returns: Benchmark returns
+            is_returns_matrix: In-sample returns (for PBO)
+            oos_returns_matrix: Out-of-sample returns (for PBO)
+            n_bootstrap: Number of bootstrap samples
+            alpha: Significance level
             
         Returns:
             Dictionary with all test results
         """
-        results = {
-            'summary': self._calculate_summary_statistics(),
-            'spa_test': None,
-            'deflated_sharpe': [],
-            'pbo_test': None,
-            'deployment_recommendation': None
-        }
+        results = {}
         
-        # 1. SPA Test
+        # White's Reality Check
         try:
-            spa_test = WhiteRealityCheck(
-                self.benchmark_returns, 
-                self.strategy_returns,
-                bootstrap_iterations=bootstrap_iterations
-            )
-            results['spa_test'] = spa_test.run_test(confidence_level)
+            wrc_result = self.wrc.test(returns_matrix, benchmark_returns, n_bootstrap, alpha=alpha)
+            results['whites_reality_check'] = wrc_result
+        except Exception as e:
+            logger.error(f"White's Reality Check failed: {e}")
+            results['whites_reality_check'] = None
+        
+        # SPA Test
+        try:
+            spa_result = self.spa.test(returns_matrix, benchmark_returns, n_bootstrap, alpha=alpha)
+            results['spa'] = spa_result
         except Exception as e:
             logger.error(f"SPA test failed: {e}")
-            results['spa_test'] = None
+            results['spa'] = None
         
-        # 2. Deflated Sharpe Ratio for each strategy
-        for i, returns in enumerate(self.strategy_returns):
-            try:
-                dsr_result = DeflatedSharpe.calculate_deflated_sharpe(
-                    returns, self.n_strategies
-                )
-                results['deflated_sharpe'].append({
-                    'strategy': self.strategy_names[i],
-                    'result': dsr_result
-                })
-            except Exception as e:
-                logger.error(f"Deflated Sharpe test failed for strategy {i}: {e}")
-        
-        # 3. PBO Test
+        # Stepwise SPA
         try:
-            pbo_estimator = PBOEstimator(self.strategy_returns)
-            results['pbo_test'] = pbo_estimator.estimate_pbo()
+            stepwise_results = self.stepwise_spa.test(returns_matrix, benchmark_returns, n_bootstrap, alpha=alpha)
+            results['stepwise_spa'] = stepwise_results
         except Exception as e:
-            logger.error(f"PBO test failed: {e}")
-            results['pbo_test'] = None
+            logger.error(f"Stepwise SPA failed: {e}")
+            results['stepwise_spa'] = None
         
-        # 4. Deployment Recommendation
-        results['deployment_recommendation'] = self._generate_deployment_recommendation(results)
+        # Deflated Sharpe Ratio for best strategy
+        if 'spa' in results and results['spa'] is not None:
+            try:
+                best_idx = results['spa'].best_strategy_index
+                best_returns = returns_matrix[:, best_idx]
+                
+                dsr_result = DeflatedSharpe.calculate(
+                    best_returns,
+                    n_trials=returns_matrix.shape[1],
+                    avg_correlation=0.1  # Conservative estimate
+                )
+                results['deflated_sharpe'] = dsr_result
+            except Exception as e:
+                logger.error(f"Deflated Sharpe calculation failed: {e}")
+                results['deflated_sharpe'] = None
+        
+        # Probability of Backtest Overfitting
+        if is_returns_matrix is not None and oos_returns_matrix is not None:
+            try:
+                pbo_result = ProbabilityBacktestOverfitting.calculate(
+                    is_returns_matrix,
+                    oos_returns_matrix,
+                    n_bootstrap=min(n_bootstrap, 1000)  # PBO doesn't need as many
+                )
+                results['pbo'] = pbo_result
+            except Exception as e:
+                logger.error(f"PBO calculation failed: {e}")
+                results['pbo'] = None
         
         return results
     
-    def _calculate_summary_statistics(self) -> Dict[str, any]:
-        """Calculate summary statistics for all strategies."""
-        stats = {}
+    def validate_deployment_criteria(self,
+                                   test_results: Dict,
+                                   spa_threshold: float = 0.05,
+                                   pbo_threshold: float = 0.2,
+                                   dsr_threshold: float = 0.05) -> Dict[str, bool]:
+        """
+        Validate strategy against deployment criteria
         
-        for i, returns in enumerate(self.strategy_returns):
-            strategy_stats = {
-                'mean_return': np.mean(returns),
-                'volatility': np.std(returns, ddof=1),
-                'sharpe_ratio': np.mean(returns) / np.std(returns, ddof=1) * np.sqrt(252),
-                'max_drawdown': self._calculate_max_drawdown(returns),
-                'skewness': stats.skew(returns),
-                'kurtosis': stats.kurtosis(returns)
+        Returns:
+            Dictionary of pass/fail for each criterion
+        """
+        validation = {}
+        
+        # SPA test criterion
+        if 'spa' in test_results and test_results['spa'] is not None:
+            spa_result = test_results['spa']
+            validation['spa_pass'] = spa_result.p_value < spa_threshold
+        else:
+            validation['spa_pass'] = False
+        
+        # PBO criterion
+        if 'pbo' in test_results and test_results['pbo'] is not None:
+            pbo_result = test_results['pbo']
+            validation['pbo_pass'] = pbo_result.pbo <= pbo_threshold
+        else:
+            validation['pbo_pass'] = True  # Pass if not available
+        
+        # Deflated Sharpe criterion
+        if 'deflated_sharpe' in test_results and test_results['deflated_sharpe'] is not None:
+            dsr_result = test_results['deflated_sharpe']
+            validation['dsr_pass'] = dsr_result.p_value < dsr_threshold
+        else:
+            validation['dsr_pass'] = True  # Pass if not available
+        
+        # Overall deployment approval
+        validation['deployment_approved'] = all([
+            validation.get('spa_pass', False),
+            validation.get('pbo_pass', True),
+            validation.get('dsr_pass', True)
+        ])
+        
+        return validation
+
+
+# Utility functions for integration
+
+def format_results_for_api(test_results: Dict) -> Dict:
+    """Format test results for API response"""
+    formatted = {}
+    
+    for test_name, result in test_results.items():
+        if result is None:
+            continue
+            
+        if isinstance(result, SignificanceTestResult):
+            formatted[test_name] = {
+                'test_statistic': float(result.test_statistic),
+                'p_value': float(result.p_value),
+                'method': result.method,
+                'n_strategies': result.n_strategies,
+                'n_bootstrap': result.n_bootstrap,
+                'best_strategy_index': result.best_strategy_index,
+                'reject_null': result.reject_null,
+                'is_significant': result.is_significant()
             }
-            stats[self.strategy_names[i]] = strategy_stats
-        
-        # Benchmark statistics
-        stats['benchmark'] = {
-            'mean_return': np.mean(self.benchmark_returns),
-            'volatility': np.std(self.benchmark_returns, ddof=1),
-            'sharpe_ratio': (np.mean(self.benchmark_returns) / 
-                           np.std(self.benchmark_returns, ddof=1) * np.sqrt(252)),
-            'max_drawdown': self._calculate_max_drawdown(self.benchmark_returns)
-        }
-        
-        return stats
-    
-    def _calculate_max_drawdown(self, returns: np.ndarray) -> float:
-        """Calculate maximum drawdown."""
-        cumulative = np.cumprod(1 + returns)
-        running_max = np.maximum.accumulate(cumulative)
-        drawdown = (cumulative - running_max) / running_max
-        return np.min(drawdown)
-    
-    def _generate_deployment_recommendation(self, results: Dict[str, any]) -> Dict[str, any]:
-        """Generate deployment recommendation based on test results."""
-        recommendation = {
-            'deploy': False,
-            'confidence': 'low',
-            'reasons': [],
-            'warnings': [],
-            'best_strategy': None
-        }
-        
-        # Check SPA test
-        if results['spa_test'] and results['spa_test'].is_significant:
-            recommendation['reasons'].append("SPA test indicates significant outperformance")
-            spa_pass = True
-        else:
-            recommendation['warnings'].append("SPA test suggests potential data snooping")
-            spa_pass = False
-        
-        # Check PBO
-        if results['pbo_test']:
-            if results['pbo_test'].pbo_estimate <= 0.2:  # Standard threshold
-                recommendation['reasons'].append(f"Low PBO risk ({results['pbo_test'].pbo_estimate:.3f})")
-                pbo_pass = True
-            else:
-                recommendation['warnings'].append(f"High PBO risk ({results['pbo_test'].pbo_estimate:.3f})")
-                pbo_pass = False
-        else:
-            pbo_pass = False
-        
-        # Check deflated Sharpe ratios
-        significant_strategies = [
-            dsr['strategy'] for dsr in results['deflated_sharpe'] 
-            if dsr['result'].is_significant
-        ]
-        
-        if significant_strategies:
-            recommendation['reasons'].append(f"Significant deflated Sharpe ratios: {significant_strategies}")
-            dsr_pass = True
-            recommendation['best_strategy'] = significant_strategies[0]  # First significant
-        else:
-            recommendation['warnings'].append("No strategies with significant deflated Sharpe ratios")
-            dsr_pass = False
-        
-        # Overall recommendation
-        if spa_pass and pbo_pass and dsr_pass:
-            recommendation['deploy'] = True
-            recommendation['confidence'] = 'high'
-        elif (spa_pass and pbo_pass) or (spa_pass and dsr_pass) or (pbo_pass and dsr_pass):
-            recommendation['deploy'] = True
-            recommendation['confidence'] = 'medium'
-        else:
-            recommendation['deploy'] = False
-            recommendation['confidence'] = 'low'
-        
-        return recommendation
-
-
-# Utility functions for API integration
-
-def validate_deployment_gates(spa_p_value: float, pbo_estimate: float,
-                            spa_threshold: float = 0.05, 
-                            pbo_threshold: float = 0.2) -> Dict[str, bool]:
-    """
-    Validate deployment gates based on significance tests.
-    
-    Args:
-        spa_p_value: SPA test p-value
-        pbo_estimate: PBO estimate
-        spa_threshold: SPA p-value threshold (default 0.05)
-        pbo_threshold: Maximum allowed PBO (default 0.2)
-        
-    Returns:
-        Dictionary with gate results
-    """
-    return {
-        'spa_gate_passed': spa_p_value < spa_threshold,
-        'pbo_gate_passed': pbo_estimate <= pbo_threshold,
-        'overall_gate_passed': (spa_p_value < spa_threshold and 
-                               pbo_estimate <= pbo_threshold),
-        'spa_p_value': spa_p_value,
-        'pbo_estimate': pbo_estimate,
-        'thresholds': {
-            'spa_threshold': spa_threshold,
-            'pbo_threshold': pbo_threshold
-        }
-    }
-
-
-def format_test_results_for_api(results: Dict[str, any]) -> Dict[str, any]:
-    """Format test results for API response."""
-    formatted = {
-        'timestamp': datetime.now().isoformat(),
-        'summary': results.get('summary', {}),
-        'tests': {}
-    }
-    
-    # Format SPA test
-    if results.get('spa_test'):
-        spa = results['spa_test']
-        formatted['tests']['spa'] = {
-            'spa_statistic': spa.spa_statistic,
-            'spa_p_value': spa.spa_p_value,
-            'is_significant': spa.is_significant,
-            'num_strategies': spa.num_strategies,
-            'interpretation': spa.interpretation
-        }
-    
-    # Format deflated Sharpe tests
-    if results.get('deflated_sharpe'):
-        formatted['tests']['deflated_sharpe'] = []
-        for dsr in results['deflated_sharpe']:
-            result = dsr['result']
-            formatted['tests']['deflated_sharpe'].append({
-                'strategy': dsr['strategy'],
-                'observed_sharpe': result.observed_sharpe,
-                'deflated_sharpe': result.deflated_sharpe,
-                'p_value': result.p_value,
-                'is_significant': result.is_significant,
-                'interpretation': result.interpretation
-            })
-    
-    # Format PBO test
-    if results.get('pbo_test'):
-        pbo = results['pbo_test']
-        formatted['tests']['pbo'] = {
-            'pbo_estimate': pbo.pbo_estimate,
-            'is_overfitted': pbo.is_overfitted,
-            'max_threshold': pbo.max_pbo_threshold,
-            'interpretation': pbo.interpretation
-        }
-    
-    # Format deployment recommendation
-    if results.get('deployment_recommendation'):
-        formatted['deployment_recommendation'] = results['deployment_recommendation']
+        elif isinstance(result, DeflatedSharpeResult):
+            formatted[test_name] = {
+                'sharpe_ratio': float(result.sharpe_ratio),
+                'deflated_sharpe': float(result.deflated_sharpe),
+                'p_value': float(result.p_value),
+                'n_trials': result.n_trials,
+                'avg_correlation': float(result.avg_correlation),
+                'is_significant': result.is_significant()
+            }
+        elif isinstance(result, PBOResult):
+            formatted[test_name] = {
+                'pbo': float(result.pbo),
+                'n_strategies': result.n_strategies,
+                'oos_performance_rank': float(result.oos_performance_rank),
+                'is_performance_rank': float(result.is_performance_rank),
+                'is_overfitted': result.is_overfitted()
+            }
+        elif isinstance(result, list):  # Stepwise SPA
+            formatted[test_name] = [
+                {
+                    'step': i,
+                    'test_statistic': float(r.test_statistic),
+                    'p_value': float(r.p_value),
+                    'best_strategy_index': r.best_strategy_index,
+                    'is_significant': r.is_significant()
+                }
+                for i, r in enumerate(result)
+            ]
     
     return formatted
+
+
+def calculate_strategy_correlations(returns_matrix: np.ndarray) -> float:
+    """Calculate average pairwise correlation between strategies"""
+    corr_matrix = np.corrcoef(returns_matrix.T)
+    
+    # Extract upper triangle excluding diagonal
+    n = corr_matrix.shape[0]
+    upper_tri_indices = np.triu_indices(n, k=1)
+    correlations = corr_matrix[upper_tri_indices]
+    
+    # Remove NaN values
+    correlations = correlations[~np.isnan(correlations)]
+    
+    if len(correlations) == 0:
+        return 0.0
+    
+    return np.mean(correlations)

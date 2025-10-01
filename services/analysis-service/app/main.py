@@ -826,13 +826,16 @@ async def evaluate_advanced_models(
     period: str = Query(default="2y", description="Training data period"),
     cv_folds: int = Query(default=5, description="Cross-validation folds"),
     include_financial_metrics: bool = Query(default=True, description="Include financial performance metrics"),
-    cv_method: str = Query(default="walk_forward", description="CV method: walk_forward, expanding_window, rolling_window, regime_aware")
+    cv_method: str = Query(default="walk_forward", description="CV method: walk_forward, expanding_window, rolling_window, regime_aware"),
+    include_significance_testing: bool = Query(default=False, description="Include DSR/PBO significance testing")
 ):
     """
     Enhanced model evaluation comparing RandomForest, LightGBM, and XGBoost
     with proper time-series cross-validation and financial metrics.
     
     This endpoint implements the enhanced Phase 1 requirement for model sophistication.
+    
+    Set include_significance_testing=true to add DSR/PBO analysis to the evaluation.
     """
     try:
         symbol = symbol.upper()
@@ -848,6 +851,77 @@ async def evaluate_advanced_models(
         
         if 'error' in result:
             raise HTTPException(status_code=400, detail=result)
+        
+        # Optionally add significance testing results
+        if include_significance_testing:
+            try:
+                logger.info(f"Adding DSR/PBO significance testing for {symbol}")
+                
+                # Import enhanced evaluator
+                from .services.enhanced_model_evaluation import EnhancedModelEvaluator
+                
+                # Get data for significance testing
+                df = await analysis_service.data_pipeline.prepare_data_for_analysis(
+                    symbol, period, add_features=True
+                )
+                
+                if df is not None and not df.empty and len(df) >= 100:
+                    # Prepare target column
+                    target_column = 'return_1d'
+                    if target_column not in df.columns:
+                        df['return_1d'] = df['close'].pct_change()
+                        df = df.dropna()
+                    
+                    # Initialize enhanced evaluator
+                    enhanced_evaluator = EnhancedModelEvaluator(
+                        spa_threshold=0.05,
+                        pbo_threshold=0.2,
+                        min_strategies_for_testing=2
+                    )
+                    
+                    # Run significance testing only (extract from base result)
+                    enhanced_result = await enhanced_evaluator.evaluate_with_significance_testing(
+                        data=df,
+                        target_column=target_column,
+                        benchmark_returns=None
+                    )
+                    
+                    # Add significance testing results to the base result
+                    result['significance_testing'] = {
+                        'deflated_sharpe_ratio': {
+                            'dsr_value': enhanced_result.significance_metrics.deflated_sharpe,
+                            'p_value': enhanced_result.significance_metrics.deflated_sharpe_p_value,
+                            'is_significant': enhanced_result.significance_metrics.deflated_sharpe_significant
+                        },
+                        'backtest_overfitting': {
+                            'pbo_estimate': enhanced_result.significance_metrics.pbo_estimate,
+                            'is_overfitted': enhanced_result.significance_metrics.pbo_is_overfitted,
+                            'interpretation': f"PBO < 0.2 indicates low overfitting risk"
+                        },
+                        'spa_test': {
+                            'p_value': enhanced_result.significance_metrics.spa_p_value,
+                            'is_significant': enhanced_result.significance_metrics.spa_is_significant
+                        },
+                        'deployment_assessment': {
+                            'overall_approved': enhanced_result.overall_deployment_approved,
+                            'statistical_confidence': enhanced_result.statistical_confidence
+                        },
+                        'interpretation': enhanced_result.significance_metrics.interpretation
+                    }
+                    
+                    logger.info(f"Significance testing completed. DSR: {enhanced_result.significance_metrics.deflated_sharpe:.4f}, "
+                               f"PBO: {enhanced_result.significance_metrics.pbo_estimate:.4f}")
+                else:
+                    result['significance_testing'] = {
+                        'error': 'Insufficient data for significance testing',
+                        'data_points': len(df) if df is not None else 0
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Error in significance testing for {symbol}: {e}")
+                result['significance_testing'] = {
+                    'error': f'Significance testing failed: {str(e)}'
+                }
         
         return result
         
@@ -947,6 +1021,164 @@ async def batch_model_evaluation(request: BatchAnalysisRequest):
     except Exception as e:
         logger.error(f"Error in batch model evaluation: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/models/evaluate-enhanced/{symbol}")
+async def evaluate_models_with_significance_testing(
+    symbol: str,
+    period: str = Query(default="2y", description="Training data period"),
+    include_spa_test: bool = Query(default=True, description="Include SPA test"),
+    include_dsr_pbo: bool = Query(default=True, description="Include DSR and PBO analysis"),
+    spa_threshold: float = Query(default=0.05, description="SPA significance threshold"),
+    pbo_threshold: float = Query(default=0.2, description="Maximum acceptable PBO"),
+    confidence_level: float = Query(default=0.95, description="Confidence level for tests")
+):
+    """
+    Enhanced model evaluation with DSR/PBO and SPA significance testing.
+    
+    Provides comprehensive statistical analysis including:
+    - Deflated Sharpe Ratio (DSR) with multiple testing correction
+    - Probability of Backtest Overfitting (PBO) estimation
+    - Superior Predictive Ability (SPA) test for data snooping
+    - Deployment gate validation
+    - Statistical confidence assessment
+    
+    This endpoint implements institutional-grade model validation standards.
+    """
+    try:
+        symbol = symbol.upper()
+        logger.info(f"Starting enhanced model evaluation with significance testing for {symbol}")
+        
+        # Import enhanced evaluator
+        from .services.enhanced_model_evaluation import EnhancedModelEvaluator
+        
+        # Initialize enhanced evaluator with custom thresholds
+        enhanced_evaluator = EnhancedModelEvaluator(
+            spa_threshold=spa_threshold,
+            pbo_threshold=pbo_threshold,
+            min_strategies_for_testing=2  # Allow testing with fewer strategies
+        )
+        
+        # Get data for evaluation
+        df = await analysis_service.data_pipeline.prepare_data_for_analysis(
+            symbol, period, add_features=True
+        )
+        
+        if df is None or df.empty:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No data available for {symbol} over period {period}"
+            )
+        
+        if len(df) < 100:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient data for reliable analysis: {len(df)} points (minimum 100 required)"
+            )
+        
+        # Determine target column (returns)
+        target_column = 'return_1d'
+        if target_column not in df.columns:
+            # Calculate returns if not present
+            df['return_1d'] = df['close'].pct_change()
+            df = df.dropna()
+        
+        # Run enhanced evaluation with significance testing
+        logger.info(f"Running enhanced evaluation with DSR/PBO for {symbol}")
+        enhanced_result = await enhanced_evaluator.evaluate_with_significance_testing(
+            data=df,
+            target_column=target_column,
+            benchmark_returns=None  # Will create market-like benchmark
+        )
+        
+        # Format response with comprehensive results
+        response = {
+            'symbol': symbol,
+            'evaluation_period': period,
+            'data_points': len(df),
+            'timestamp': enhanced_result.timestamp.isoformat(),
+            
+            # Base model evaluation results
+            'model_performance': {
+                'best_model': enhanced_result.base_evaluation.best_model,
+                'models_tested': len(enhanced_result.base_evaluation.model_metrics),
+                'model_metrics': {
+                    model: {
+                        'sharpe_ratio': metrics.sharpe_ratio,
+                        'volatility': metrics.volatility,
+                        'max_drawdown': metrics.max_drawdown,
+                        'hit_rate': getattr(metrics, 'hit_rate', None)
+                    }
+                    for model, metrics in enhanced_result.base_evaluation.model_metrics.items()
+                }
+            },
+            
+            # Significance testing results
+            'significance_analysis': {
+                'spa_test': {
+                    'p_value': enhanced_result.significance_metrics.spa_p_value,
+                    'is_significant': enhanced_result.significance_metrics.spa_is_significant,
+                    'threshold': spa_threshold,
+                    'passed': enhanced_result.spa_gate_passed
+                } if include_spa_test else None,
+                
+                'deflated_sharpe_ratio': {
+                    'dsr_value': enhanced_result.significance_metrics.deflated_sharpe,
+                    'p_value': enhanced_result.significance_metrics.deflated_sharpe_p_value,
+                    'is_significant': enhanced_result.significance_metrics.deflated_sharpe_significant,
+                    'interpretation': 'Lower DSR indicates better risk-adjusted performance after multiple testing correction'
+                } if include_dsr_pbo else None,
+                
+                'backtest_overfitting': {
+                    'pbo_estimate': enhanced_result.significance_metrics.pbo_estimate,
+                    'is_overfitted': enhanced_result.significance_metrics.pbo_is_overfitted,
+                    'threshold': pbo_threshold,
+                    'passed': enhanced_result.pbo_gate_passed,
+                    'interpretation': f'PBO < {pbo_threshold} indicates low overfitting risk'
+                } if include_dsr_pbo else None,
+                
+                'confidence_level': f'{confidence_level*100}%',
+                'strategies_tested': enhanced_result.significance_metrics.n_strategies_tested,
+                'interpretation': enhanced_result.significance_metrics.interpretation
+            },
+            
+            # Deployment recommendation
+            'deployment_assessment': {
+                'overall_approved': enhanced_result.overall_deployment_approved,
+                'recommendation': enhanced_result.deployment_recommendation,
+                'statistical_confidence': enhanced_result.statistical_confidence,
+                'overfitting_risk_score': enhanced_result.overfitting_risk_score,
+                'risk_adjusted_ranking': enhanced_result.risk_adjusted_ranking
+            },
+            
+            # Enhanced analysis
+            'advanced_metrics': {
+                'model_comparison': enhanced_result.model_comparison_analysis,
+                'sensitivity_analysis': enhanced_result.sensitivity_analysis
+            },
+            
+            # Configuration
+            'test_configuration': {
+                'spa_threshold': spa_threshold,
+                'pbo_threshold': pbo_threshold,
+                'confidence_level': confidence_level,
+                'include_spa_test': include_spa_test,
+                'include_dsr_pbo': include_dsr_pbo
+            }
+        }
+        
+        logger.info(f"Enhanced evaluation completed for {symbol}. "
+                   f"Deployment approved: {enhanced_result.overall_deployment_approved}")
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in enhanced model evaluation for {symbol}: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Enhanced model evaluation failed: {str(e)}"
+        )
 
 @app.get("/analyze/{symbol}/patterns")
 async def get_chart_patterns(

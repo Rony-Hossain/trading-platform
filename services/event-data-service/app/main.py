@@ -3,10 +3,13 @@
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
+import pandas as pd
+import numpy as np
 
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import Depends, FastAPI, HTTPException, Query, status, WebSocket, WebSocketDisconnect, Request
+from pydantic import BaseModel, Field
 from fastapi.responses import StreamingResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -39,10 +42,50 @@ from .services.bulk_ingestion import build_bulk_ingestion_service, IngestionForm
 from .services.event_streaming import build_event_streaming_service, EventType as StreamEventType
 from .services.realtime_endpoints import build_websocket_manager, build_sse_manager
 from .services.analytics_service import analytics_service
+from .services.car_engine import ClusterRobustCAR, EventStudyInput, EventWindow, EstimationWindow
 from .graphql import schema
 
 SERVICE_NAME = "event-data-service"
 logger = logging.getLogger(__name__)
+
+
+# CAR Analysis Pydantic Models
+class CARAnalysisRequest(BaseModel):
+    """Request model for CAR analysis."""
+    event_data: List[Dict[str, Any]] = Field(..., description="List of events with symbol, event_date, and optional fields")
+    returns_data: Dict[str, List[float]] = Field(..., description="Stock returns by symbol")
+    market_returns: List[float] = Field(..., description="Market returns time series")
+    return_dates: List[str] = Field(..., description="Dates corresponding to returns")
+    event_window_pre: int = Field(5, description="Days before event", ge=0, le=30)
+    event_window_post: int = Field(5, description="Days after event", ge=0, le=30)
+    estimation_days: int = Field(250, description="Estimation window length", ge=50, le=500)
+    cluster_method: str = Field("time", description="Clustering method: time, industry, size, custom")
+    model_type: str = Field("market_model", description="Model type: market_model, mean_adjusted, market_adjusted")
+
+class CARStatistics(BaseModel):
+    """Statistical results for CAR analysis."""
+    standard_error: float
+    t_statistic: float
+    p_value: float
+    is_significant: bool
+
+class CARClusterStatistics(BaseModel):
+    """Cluster-robust statistical results."""
+    cluster_robust_se: float
+    t_stat_clustered: float
+    p_value_clustered: float
+    is_significant: bool
+    n_clusters: int
+
+class CARAnalysisResponse(BaseModel):
+    """Response model for CAR analysis."""
+    summary: Dict[str, Any]
+    statistical_tests: Dict[str, Any]
+    car_by_window: Dict[str, float]
+    cumulative_returns: List[float]
+    event_window: Dict[str, int]
+    clustering_method: str
+    analysis_timestamp: str
 
 
 def _to_schema(event: EventORM) -> Event:
@@ -2565,6 +2608,130 @@ def create_app() -> FastAPI:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to clear analytics cache: {str(e)}"
+            )
+
+    @app.post("/car-analysis", response_model=CARAnalysisResponse, tags=["Event Studies"])
+    async def run_car_analysis(request: CARAnalysisRequest):
+        """
+        Run Cumulative Abnormal Returns (CAR) analysis with cluster-robust statistics.
+        
+        Performs event study analysis to measure the impact of events on stock returns.
+        Returns both standard and cluster-robust statistical tests to handle correlation
+        in event observations.
+        
+        - **event_data**: List of events with symbol, event_date, and optional clustering fields
+        - **returns_data**: Stock returns by symbol (aligned with return_dates)
+        - **market_returns**: Market benchmark returns  
+        - **return_dates**: Date strings for return data alignment
+        - **event_window_pre/post**: Days before/after event to analyze
+        - **estimation_days**: Length of estimation window for normal performance model
+        - **cluster_method**: Clustering approach (time, industry, size, custom)
+        - **model_type**: Abnormal return model (market_model, mean_adjusted, market_adjusted)
+        
+        Returns comprehensive analysis including:
+        - Standard t-statistics and p-values
+        - Cluster-robust t-statistics and p-values  
+        - CAR values for different event windows
+        - Event summary statistics
+        """
+        try:
+            logger.info(f"Starting CAR analysis for {len(request.event_data)} events")
+            
+            # Validate input data
+            if len(request.event_data) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="No events provided for analysis"
+                )
+            
+            if len(request.return_dates) != len(request.market_returns):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Length mismatch between return_dates and market_returns"
+                )
+            
+            # Convert input data to pandas structures
+            try:
+                # Create date index
+                date_index = pd.to_datetime(request.return_dates)
+                
+                # Create market returns series
+                market_returns = pd.Series(request.market_returns, index=date_index)
+                
+                # Create stock returns DataFrame
+                returns_df = pd.DataFrame(request.returns_data, index=date_index)
+                
+                # Validate returns data consistency
+                for symbol, returns in request.returns_data.items():
+                    if len(returns) != len(request.return_dates):
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=f"Return data length mismatch for symbol {symbol}"
+                        )
+                
+                # Convert event data to DataFrame
+                event_df = pd.DataFrame(request.event_data)
+                
+                # Validate required event fields
+                required_fields = ['symbol', 'event_date']
+                missing_fields = [field for field in required_fields if field not in event_df.columns]
+                if missing_fields:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Missing required event fields: {missing_fields}"
+                    )
+                
+            except Exception as e:
+                logger.error(f"Data conversion error: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid input data format: {str(e)}"
+                )
+            
+            # Set up event study parameters
+            event_window = EventWindow(
+                pre_event_days=request.event_window_pre,
+                post_event_days=request.event_window_post
+            )
+            
+            estimation_window = EstimationWindow(
+                days_before_event=request.estimation_days,
+                days_before_gap=10  # Standard gap between estimation and event window
+            )
+            
+            # Create event study input
+            study_input = EventStudyInput(
+                returns=returns_df,
+                market_returns=market_returns,
+                event_data=event_df,
+                event_window=event_window,
+                estimation_window=estimation_window
+            )
+            
+            # Initialize CAR engine with specified clustering method
+            car_engine = ClusterRobustCAR(cluster_method=request.cluster_method)
+            
+            # Run the analysis
+            logger.info(f"Running CAR analysis with {request.cluster_method} clustering")
+            result = car_engine.run_event_study(study_input)
+            
+            # Export results in API format
+            analysis_results = car_engine.export_results(result)
+            
+            logger.info(f"CAR analysis completed successfully. "
+                       f"Mean CAR: {result.mean_car:.4f}, "
+                       f"Cluster p-value: {result.cluster_robust_p_value:.4f}")
+            
+            return CARAnalysisResponse(**analysis_results)
+            
+        except HTTPException:
+            # Re-raise HTTP exceptions as-is
+            raise
+        except Exception as e:
+            logger.error(f"CAR analysis failed: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"CAR analysis failed: {str(e)}"
             )
 
     return app

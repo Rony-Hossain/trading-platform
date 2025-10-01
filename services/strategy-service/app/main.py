@@ -21,6 +21,11 @@ from .engines.market_impact_model import (
     MarketImpactModel, MarketMicrostructure, OrderProfile, 
     ImpactModel, ExecutionStyle
 )
+from .engines.portfolio_constructor import create_portfolio_allocation
+from .execution.borrow_checker import (
+    BorrowChecker, BorrowRequest, create_borrow_checker, 
+    validate_portfolio_shorts, BorrowStatus
+)
 from .strategies.strategy_loader import StrategyLoader
 from .schemas import (
     Strategy, StrategyCreate, StrategyUpdate,
@@ -45,6 +50,7 @@ portfolio_manager = PortfolioManager()
 risk_manager = RiskManager()
 market_impact_model = MarketImpactModel()
 strategy_loader = StrategyLoader()
+borrow_checker = create_borrow_checker({'enable_mock': True})
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -717,6 +723,495 @@ async def get_market_impact_capabilities():
         logger.error(f"Error getting market impact capabilities: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# Portfolio Construction Endpoints
+
+class PortfolioAllocationRequest(BaseModel):
+    symbols: List[str]
+    returns_data: Dict[str, List[float]]  # symbol -> list of daily returns
+    returns_dates: Optional[List[str]] = None  # ISO date strings
+    current_positions: Optional[Dict[str, float]] = None  # symbol -> weight
+    config: Optional[Dict[str, Any]] = None  # Portfolio configuration overrides
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "symbols": ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"],
+                "returns_data": {
+                    "AAPL": [0.01, -0.005, 0.02, 0.015, -0.01],
+                    "GOOGL": [0.015, 0.005, -0.01, 0.02, 0.005],
+                    "MSFT": [0.005, 0.01, 0.015, -0.005, 0.02],
+                    "TSLA": [0.03, -0.02, 0.05, -0.01, 0.015],
+                    "AMZN": [0.02, 0.01, -0.015, 0.025, -0.005]
+                },
+                "current_positions": {
+                    "AAPL": 0.2,
+                    "GOOGL": 0.2,
+                    "MSFT": 0.2,
+                    "TSLA": 0.2,
+                    "AMZN": 0.2
+                },
+                "config": {
+                    "target_volatility": 0.12,
+                    "max_single_weight": 0.06,
+                    "covariance_method": "ledoit_wolf"
+                }
+            }
+        }
+
+@app.post("/portfolio/allocate")
+async def create_portfolio_allocation_endpoint(request: PortfolioAllocationRequest):
+    """
+    Create optimal portfolio allocation using ERC with volatility targeting.
+    
+    This endpoint implements Equal Risk Contribution (ERC) portfolio optimization with:
+    - Ledoit-Wolf or OAS covariance estimation
+    - Volatility targeting (default 10% annual)
+    - Exposure and correlation caps
+    - Risk metrics and constraint monitoring
+    
+    Returns portfolio weights, risk metrics, and constraint validation flags.
+    """
+    try:
+        # Convert returns data to pandas Series
+        asset_returns = {}
+        
+        if request.returns_dates:
+            # Use provided dates
+            dates = pd.to_datetime(request.returns_dates)
+        else:
+            # Generate date range
+            dates = pd.date_range(
+                end=datetime.now(),
+                periods=len(next(iter(request.returns_data.values()))),
+                freq='D'
+            )
+        
+        for symbol in request.symbols:
+            if symbol in request.returns_data:
+                returns_list = request.returns_data[symbol]
+                asset_returns[symbol] = pd.Series(returns_list, index=dates[:len(returns_list)])
+        
+        if not asset_returns:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid returns data provided for any symbols"
+            )
+        
+        # Call portfolio construction
+        result = create_portfolio_allocation(
+            asset_returns=asset_returns,
+            current_positions=request.current_positions,
+            config_overrides=request.config
+        )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating portfolio allocation: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/portfolio/config-schema")
+async def get_portfolio_config_schema():
+    """
+    Get portfolio construction configuration schema.
+    
+    Returns available configuration parameters and their default values.
+    """
+    try:
+        return {
+            "configuration_parameters": {
+                "target_volatility": {
+                    "description": "Target annual portfolio volatility",
+                    "type": "float",
+                    "default": 0.10,
+                    "range": [0.05, 0.50],
+                    "example": 0.12
+                },
+                "vol_tolerance": {
+                    "description": "Tolerance around target volatility",
+                    "type": "float", 
+                    "default": 0.01,
+                    "range": [0.005, 0.05],
+                    "example": 0.015
+                },
+                "covariance_method": {
+                    "description": "Covariance estimation method",
+                    "type": "string",
+                    "default": "ledoit_wolf",
+                    "options": ["ledoit_wolf", "oas", "empirical"],
+                    "example": "ledoit_wolf"
+                },
+                "lookback_days": {
+                    "description": "Number of days for return history",
+                    "type": "integer",
+                    "default": 252,
+                    "range": [60, 1000],
+                    "example": 180
+                },
+                "max_single_weight": {
+                    "description": "Maximum weight per asset",
+                    "type": "float",
+                    "default": 0.05,
+                    "range": [0.01, 0.50],
+                    "example": 0.08
+                },
+                "max_sector_weight": {
+                    "description": "Maximum weight per sector",
+                    "type": "float",
+                    "default": 0.25,
+                    "range": [0.05, 1.0],
+                    "example": 0.30
+                },
+                "max_beta": {
+                    "description": "Maximum portfolio beta",
+                    "type": "float",
+                    "default": 1.2,
+                    "range": [0.5, 2.0],
+                    "example": 1.5
+                },
+                "max_turnover": {
+                    "description": "Maximum portfolio turnover per rebalance",
+                    "type": "float",
+                    "default": 0.5,
+                    "range": [0.1, 2.0],
+                    "example": 0.3
+                },
+                "risk_aversion": {
+                    "description": "Risk aversion parameter for optimization",
+                    "type": "float",
+                    "default": 1e-6,
+                    "range": [1e-8, 1e-3],
+                    "example": 5e-6
+                }
+            },
+            "constraint_types": {
+                "exposure_constraints": {
+                    "max_long_exposure": "Maximum long exposure (default 1.0)",
+                    "max_short_exposure": "Maximum short exposure (default 0.3)"
+                },
+                "sector_constraints": {
+                    "description": "Per-sector exposure limits",
+                    "automatic": "Detected from asset metadata"
+                },
+                "beta_constraints": {
+                    "description": "Portfolio beta limits",
+                    "requires": "Asset beta data"
+                }
+            },
+            "risk_metrics_calculated": {
+                "expected_volatility": "Annualized portfolio volatility",
+                "diversification_ratio": "Ratio of weighted avg vol to portfolio vol",
+                "effective_assets": "Effective number of assets (concentration measure)",
+                "max_drawdown": "Historical maximum drawdown",
+                "vol_target_achieved": "Whether volatility target was achieved"
+            },
+            "example_request": {
+                "symbols": ["AAPL", "GOOGL", "MSFT"],
+                "returns_data": {
+                    "AAPL": [0.01, -0.005, 0.02],
+                    "GOOGL": [0.015, 0.005, -0.01], 
+                    "MSFT": [0.005, 0.01, 0.015]
+                },
+                "config": {
+                    "target_volatility": 0.15,
+                    "max_single_weight": 0.4,
+                    "covariance_method": "ledoit_wolf"
+                }
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting portfolio config schema: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Borrow/Locate & Hard-To-Borrow Fees Endpoints
+
+class BorrowCheckRequest(BaseModel):
+    symbol: str
+    quantity: int
+    side: str  # 'buy' or 'sell'
+    order_type: str = "market"
+    urgency: str = "normal"
+    account_id: Optional[str] = None
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "symbol": "AAPL",
+                "quantity": 1000,
+                "side": "sell",
+                "order_type": "market",
+                "urgency": "normal"
+            }
+        }
+
+class PortfolioBorrowRequest(BaseModel):
+    positions: List[Dict[str, Any]]
+    
+    class Config:
+        schema_extra = {
+            "example": {
+                "positions": [
+                    {"symbol": "AAPL", "side": "sell", "quantity": 1000, "position_value": 150000, "holding_days": 30},
+                    {"symbol": "TSLA", "side": "sell", "quantity": 500, "position_value": 100000, "holding_days": 15},
+                    {"symbol": "MSFT", "side": "buy", "quantity": 800, "position_value": 240000, "holding_days": 45}
+                ]
+            }
+        }
+
+@app.post("/borrow/check")
+async def check_borrow_availability(request: BorrowCheckRequest):
+    """
+    Check borrow availability and fees for a single position.
+    
+    This endpoint validates whether a short position can be executed by checking:
+    - Borrow availability from configured providers
+    - Current borrow rates and fees
+    - Quantity limits and constraints
+    
+    Returns borrow status, fees, and validation results.
+    """
+    try:
+        borrow_request = BorrowRequest(
+            symbol=request.symbol,
+            quantity=request.quantity,
+            side=request.side,
+            order_type=request.order_type,
+            urgency=request.urgency,
+            account_id=request.account_id
+        )
+        
+        # Check borrow availability
+        borrow_info = await borrow_checker.check_borrow_availability(borrow_request)
+        
+        # Validate the order
+        validation = await borrow_checker.validate_short_order(
+            request.symbol, 
+            request.quantity, 
+            request.account_id
+        )
+        
+        return {
+            "symbol": request.symbol,
+            "quantity": request.quantity,
+            "side": request.side,
+            "borrow_info": {
+                "status": borrow_info.status.value,
+                "available": borrow_info.is_available,
+                "quantity_available": borrow_info.quantity_available,
+                "borrow_rate_annual": borrow_info.borrow_rate,
+                "locate_fee": borrow_info.locate_fee,
+                "rebate_rate": borrow_info.rebate_rate,
+                "daily_cost_per_dollar": borrow_info.daily_cost_per_dollar,
+                "provider": borrow_info.source,
+                "updated_at": borrow_info.updated_at.isoformat()
+            },
+            "validation": validation,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error checking borrow availability: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/borrow/calculate-costs")
+async def calculate_borrow_costs(
+    symbol: str,
+    position_value: float,
+    holding_days: int,
+    side: str = "sell"
+):
+    """
+    Calculate detailed borrow costs for a position.
+    
+    Provides comprehensive cost breakdown including:
+    - Daily borrowing fees
+    - Total cost over holding period
+    - Locate fees
+    - Net position value after costs
+    """
+    try:
+        if side.lower() == 'buy':
+            return {
+                "symbol": symbol,
+                "position_value": position_value,
+                "holding_days": holding_days,
+                "costs": {
+                    "daily_fee": 0.0,
+                    "total_borrow_cost": 0.0,
+                    "locate_fee": 0.0,
+                    "net_position_value": position_value,
+                    "borrow_rate_annual": 0.0,
+                    "note": "No borrow costs for long positions"
+                }
+            }
+        
+        # Get borrow info for short position
+        borrow_request = BorrowRequest(
+            symbol=symbol,
+            quantity=int(abs(position_value) / 100),  # Estimate shares
+            side=side
+        )
+        
+        borrow_info = await borrow_checker.check_borrow_availability(borrow_request)
+        costs = borrow_checker.calculate_borrow_cost(symbol, position_value, holding_days, borrow_info)
+        
+        return {
+            "symbol": symbol,
+            "position_value": position_value,
+            "holding_days": holding_days,
+            "side": side,
+            "borrow_available": borrow_info.is_available,
+            "costs": costs,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating borrow costs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/borrow/validate-portfolio")
+async def validate_portfolio_borrow(request: PortfolioBorrowRequest):
+    """
+    Validate borrow availability for an entire portfolio.
+    
+    Checks all short positions in a portfolio and provides:
+    - Individual position validation
+    - Portfolio-level summary statistics
+    - Cost calculations for all positions
+    - Blocked position identification
+    """
+    try:
+        # Validate short positions
+        portfolio_validation = await validate_portfolio_shorts(request.positions, borrow_checker)
+        
+        # Calculate costs for all positions
+        costs = await borrow_checker.get_borrow_costs_batch(request.positions)
+        
+        # Combine results
+        result = portfolio_validation.copy()
+        result['borrow_costs'] = costs
+        
+        # Calculate total portfolio costs
+        total_daily_fees = sum(cost.get('daily_fee', 0) for cost in costs.values())
+        total_borrow_costs = sum(cost.get('total_borrow_cost', 0) for cost in costs.values())
+        total_locate_fees = sum(cost.get('locate_fee', 0) for cost in costs.values())
+        
+        result['portfolio_summary'] = {
+            **result['summary'],
+            'total_daily_fees': total_daily_fees,
+            'total_borrow_costs': total_borrow_costs,
+            'total_locate_fees': total_locate_fees,
+            'total_position_value': sum(p.get('position_value', 0) for p in request.positions),
+            'cost_as_percentage': (total_borrow_costs / sum(abs(p.get('position_value', 1)) for p in request.positions)) * 100
+        }
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error validating portfolio borrow: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/borrow/block-symbol")
+async def block_symbol_for_shorting(
+    symbol: str,
+    reason: str = "Risk management decision"
+):
+    """
+    Block a symbol from short selling.
+    
+    Adds a symbol to the blocked list, preventing any short orders
+    from being validated for execution.
+    """
+    try:
+        borrow_checker.block_symbol(symbol, reason)
+        
+        return {
+            "symbol": symbol,
+            "status": "blocked",
+            "reason": reason,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error blocking symbol: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/borrow/unblock-symbol")
+async def unblock_symbol_for_shorting(symbol: str):
+    """
+    Unblock a symbol for short selling.
+    
+    Removes a symbol from the blocked list, allowing short orders
+    to be validated normally.
+    """
+    try:
+        borrow_checker.unblock_symbol(symbol)
+        
+        return {
+            "symbol": symbol,
+            "status": "unblocked",
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error unblocking symbol: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/borrow/status")
+async def get_borrow_service_status():
+    """
+    Get borrow service status and configuration.
+    
+    Returns information about available providers, blocked symbols,
+    and service health status.
+    """
+    try:
+        return {
+            "service": "Borrow/Locate & Hard-To-Borrow Fees",
+            "status": "active",
+            "timestamp": datetime.now().isoformat(),
+            "providers": [provider.name for provider in borrow_checker.providers],
+            "blocked_symbols": list(borrow_checker.blocked_symbols),
+            "capabilities": {
+                "borrow_availability_check": True,
+                "cost_calculation": True,
+                "portfolio_validation": True,
+                "real_time_rates": True,
+                "multiple_providers": True,
+                "symbol_blocking": True,
+                "fee_embedding": True
+            },
+            "borrow_statuses": {
+                "available": "Borrow is available for short selling",
+                "unavailable": "Borrow is not available",
+                "limited": "Limited quantity available",
+                "hard_to_borrow": "Available but expensive (HTB)",
+                "easy_to_borrow": "Available at low cost (ETB)",
+                "unknown": "Status could not be determined"
+            },
+            "fee_components": {
+                "borrow_rate": "Annual percentage rate for borrowing",
+                "locate_fee": "One-time fee for locating shares",
+                "rebate_rate": "Interest earned on cash collateral",
+                "daily_fee": "Daily cost per dollar of position"
+            },
+            "validation_gates": {
+                "availability_check": "Blocks orders if borrow unavailable",
+                "quantity_limits": "Enforces maximum borrowable quantity",
+                "blocked_symbols": "Prevents trading in risk-managed symbols",
+                "fee_disclosure": "Records all costs in trade records"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting borrow service status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8007, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8006, log_level="info")
