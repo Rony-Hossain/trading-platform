@@ -1,0 +1,1538 @@
+# Phase 4 — Platform Hardening & Alpha Expansion
+
+**Timeline**: 12 weeks (Weeks 11-22)
+**Focus**: Production-grade infrastructure, operational excellence, and alpha generation at scale
+
+---
+
+## 🎯 Phase 4 Objectives
+
+1. **PIT-Native Data Infrastructure**: Feature store with temporal guarantees
+2. **Production ML Ops**: Streaming inference, champion/challenger, automated retrains
+3. **Execution Excellence**: Smart order routing, comprehensive attribution, halt-safe execution
+4. **Operational Resilience**: DR/chaos testing, secrets management, zero-downtime deployments
+5. **Alpha Expansion**: Alt-data onboarding, simulation engine, research acceleration
+
+---
+
+## 📋 Recommended Implementation Sequence
+
+### **Weeks 11-12: Critical Data Foundation** 🔴 HIGH PRIORITY
+
+#### 4.A Data Infrastructure & Quality (PIT-Native)
+
+**Objective**: Build production-grade, PIT-compliant data infrastructure
+
+##### ✅ Feature Store / Temporal Tables
+
+**Files**:
+- `infrastructure/feature_store/feast_repo/feature_store.yaml` (Option 1: Feast)
+- `infrastructure/sql/timescale/temporal_tables.sql` (Option 2: Temporal Tables)
+- `services/*/app/io/feature_reader.py`
+- `services/*/app/io/feature_writer.py`
+
+**API**:
+- `POST /features/materialize?as_of=<timestamp>` - Materialize features for specific time
+- `GET /features/online?entity_id=<id>&features=<list>` - Real-time feature serving
+- `GET /features/offline?entity_ids=<ids>&feature_view=<view>&start=<ts>&end=<ts>` - Batch features
+
+**Config**:
+```yaml
+FEATURE_STORE_BACKEND: feast|temporal_tables
+FEATURE_TTL_DAYS: 365
+FEATURE_REFRESH_INTERVAL_MINUTES: 5
+ENABLE_FEATURE_CACHING: true
+CACHE_TTL_SECONDS: 60
+```
+
+**Tests**: `tests/features/test_point_in_time_join.py`
+- Test PIT correctness: Same as_of_ts always returns same features
+- Test offline/online consistency
+- Test backfill reproducibility
+- Test temporal join correctness
+
+**Acceptance Criteria**:
+- ✅ Offline/online skew < 1% for 95% of features over 30 days
+- ✅ PIT audit PASS with zero Critical/High findings
+- ✅ Feature latency p99 < 100ms for online serving
+- ✅ Backfill reproducibility: 100% identical results for same as_of_ts
+- ✅ Historical point-in-time queries complete in < 5 seconds
+
+**Decision Matrix: Feast vs Temporal Tables**
+| Criteria | Feast | Temporal Tables |
+|----------|-------|-----------------|
+| Feature count | Best for >1000 | Best for <1000 |
+| Team size | Requires 1+ MLOps engineer | Can manage with SQL knowledge |
+| Online latency | 5-20ms | 10-50ms |
+| Offline queries | Optimized for ML | Standard SQL |
+| Ecosystem | Integrated with MLflow/Kubeflow | Standalone |
+| **Recommendation** | Use if scaling to 1000+ features | Use for MVP and <1000 features |
+
+##### ✅ Automated Data Quality
+
+**Files**:
+- `data_quality/expectations/*.json` - Great Expectations suites
+- `data_quality/expectations/market_data.json`
+- `data_quality/expectations/features.json`
+- `jobs/data_quality/run_expectations.py`
+- `jobs/data_quality/generate_reports.py`
+
+**Metrics**:
+```
+dq_fail_rate{dataset="market_data", expectation="..."}
+dq_total_checks{dataset="..."}
+dq_check_duration_seconds{dataset="..."}
+```
+
+**Tests**: `tests/data_quality/test_expectations.py`
+
+**Acceptance Criteria**:
+- ✅ ≥99% expectation pass rate across all datasets
+- ✅ Data quality incidents have post-mortems within 48h
+- ✅ Critical data issues alert within 5 minutes
+- ✅ Automated remediation for ≥50% of common DQ issues
+
+**Example Expectations**:
+```json
+{
+  "expectation_suite_name": "market_data_suite",
+  "expectations": [
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": {"column": "close"}
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_between",
+      "kwargs": {"column": "volume", "min_value": 0, "max_value": 1e12}
+    },
+    {
+      "expectation_type": "expect_table_row_count_to_be_between",
+      "kwargs": {"min_value": 100, "max_value": 1000000}
+    }
+  ]
+}
+```
+
+##### ✅ Backfills & Revisions Governance
+
+**Files**:
+- `services/event-data-service/app/services/revision_tracker.py`
+- `services/event-data-service/app/models/data_revision.py`
+- `services/event-data-service/app/api/backfill_controller.py`
+
+**API**:
+- `POST /backfill/initiate` - Start backfill job
+- `GET /backfill/status/{job_id}` - Check backfill status
+- `GET /revisions/history?dataset=<name>&as_of=<ts>` - Revision history
+
+**Database Schema**:
+```sql
+CREATE TABLE data_revisions (
+    revision_id SERIAL PRIMARY KEY,
+    dataset_name VARCHAR(255) NOT NULL,
+    as_of_timestamp TIMESTAMPTZ NOT NULL,
+    revision_seq INT NOT NULL,
+    data_hash VARCHAR(64) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
+    reason TEXT,
+    UNIQUE(dataset_name, as_of_timestamp, revision_seq)
+);
+```
+
+**Tests**: `tests/backfill/test_revision_tracking.py`
+
+**Acceptance Criteria**:
+- ✅ Reproduce historical cuts with (as_of_ts, revision_seq) - 100% reproducibility
+- ✅ All backfills tracked with audit trail
+- ✅ Backfill validation: old vs new data comparison reports
+- ✅ Rollback capability: revert to previous revision in < 30 minutes
+
+---
+
+Weeks 11-12: Data Foundation ✅
+1. Feature Store (Feast Integration)
+Complete Feast setup with Redis online store
+7 feature views: price/volume, momentum, liquidity, fundamental, sentiment, macro, sector
+PIT-compliant feature client with strict validation
+<10ms p95 latency for online retrieval
+Freshness SLOs per feature tier
+2. Data Quality Framework (Great Expectations)
+Market data validation suite (prices, volumes, spreads)
+Feature data validation suite (PIT compliance, value ranges)
+Automatic pipeline blocking on critical failures
+Validation metrics tracking
+3. PIT Backfill Pipeline
+Parallel backfill with configurable workers
+Strict PIT compliance validation
+Partitioned Parquet output
+Target: >1M rows/min throughput
+Weeks 13-14: Model Ops & Streaming ✅
+4. Streaming Fabric
+Kafka + Zookeeper + Schema Registry
+Redis Streams for ultra-low latency (<5ms)
+15+ topic definitions with appropriate partitioning
+Unified streaming integration (routes between Kafka/Redis based on priority)
+5. Low-Latency Inference Service
+ONNX Runtime for <5ms p95 predictions
+Batch inference support for throughput
+Champion/challenger deployment manager
+FastAPI service with health/metrics endpoints
+6. Auto-Retrain Pipeline
+Performance monitoring with degradation detection
+Automated retrain triggers (Sharpe, drawdown, drift)
+Validation gates (SPA, DSR, PBO)
+MLflow integration for tracking
+Next Steps
+Continuing with Weeks 15-16 (Execution):
+Smart Order Routing (SOR)
+Trade Journal system
+Real-time P&L Attribution
+Then proceeding through security, reliability, and specialized features as outlined in your Phase 4 plan. All implementations follow your requirements:
+100% PIT compliance with strict validation
+Production-grade error handling and monitoring
+Comprehensive test suites with acceptance criteria
+Integration with existing infrastructure (MLflow, Prometheus, etc.)
+
+### **Weeks 13-14: Model Ops & Streaming** 🟡 MEDIUM PRIORITY
+
+#### 4.B Model Ops & Streaming
+
+**Objective**: Production ML infrastructure with low-latency streaming
+
+##### ✅ Event/Feature Streaming Fabric
+
+**Files**:
+- `infrastructure/streaming/kafka/topics.tf` (Kafka option)
+- `infrastructure/streaming/redis_streams/config.yaml` (Redis option)
+- `services/streaming/producers/feature_producer.py`
+- `services/streaming/consumers/signal_consumer.py`
+
+**Topics/Streams**:
+- `features.raw` - Raw feature updates
+- `features.pit` - PIT-validated features
+- `signals.{strategy}` - Strategy signals (per strategy)
+- `orders` - Order requests
+- `fills` - Execution fills
+- `market_data.l1` - Level 1 quotes
+- `market_data.trades` - Trade ticks
+
+**Config**:
+```yaml
+STREAM_BACKEND: kafka|redis_streams
+STREAM_ACKS: all  # Durability guarantee
+STREAM_MAX_LAG_MS: 200  # Max acceptable lag
+STREAM_CONSUMER_GROUP: trading_service
+STREAM_BATCH_SIZE: 100
+STREAM_COMPRESSION: lz4
+```
+
+**Tests**: `tests/streaming/test_exactly_once.py`
+- Test exactly-once semantics
+- Test message ordering
+- Test backpressure handling
+- Test consumer group rebalancing
+
+**Acceptance Criteria**:
+- ✅ p99 feature latency < 500ms (message production to consumption)
+- ✅ Zero message loss under normal operations
+- ✅ Exactly-once delivery for critical streams (orders, fills)
+- ✅ Stream lag < 200ms under 2x normal load
+
+**Decision: Kafka vs Redis Streams**
+| Criteria | Kafka | Redis Streams |
+|----------|-------|---------------|
+| Throughput | >10K msg/s | <10K msg/s |
+| Latency | p99 ~20ms | p99 ~5ms |
+| Durability | Excellent | Good (with AOF) |
+| Ops complexity | High | Medium |
+| **Recommendation** | Use for >10K msg/s or multi-DC | Use for <10K msg/s, single DC |
+
+##### ✅ Low-Latency Inference (TorchServe/ONNX)
+
+**Files**:
+- `inference/onnx/*.onnx` (ONNX runtime)
+- `inference/torchserve/model_store/` (TorchServe)
+- `inference/deployment/inference_service.py`
+- `inference/conversion/to_onnx.py`
+
+**API**:
+- `POST /inference/predict` - Real-time prediction
+- `POST /inference/batch` - Batch prediction
+- `GET /inference/health` - Health check
+- `GET /inference/metrics` - Prometheus metrics
+
+**Config**:
+```yaml
+INFER_RUNTIME: onnx|torchserve|triton
+INFER_P99_MS_TARGET: 50
+INFER_BATCH_SIZE: 32
+INFER_GPU_ENABLED: true
+INFER_MODEL_WARMUP: true
+INFER_MAX_BATCH_DELAY_MS: 10
+```
+
+**Tests**: `tests/inference/test_latency_sla.py`
+- Load test at 2x prod QPS
+- Stress test at 5x prod QPS
+- Model warmup time test
+- GPU memory test
+
+**Acceptance Criteria**:
+- ✅ p99 inference latency ≤ 50ms under 2× prod QPS
+- ✅ p99 ≤ 100ms under 5× prod QPS (stress test)
+- ✅ Model warmup time < 30s
+- ✅ Zero OOM errors under 3× prod QPS
+- ✅ GPU utilization 60-80% (if using GPU)
+
+##### ✅ Scheduled Retrains + Champion/Challenger
+
+**Files**:
+- `mlops/retrain_orchestrator.py` (Airflow/Prefect DAG)
+- `mlops/promotion_gate.py`
+- `mlops/rollback_controller.py`
+- `mlops/champion_challenger.py`
+
+**Workflow**:
+```
+1. Scheduled Trigger (cron)
+   ↓
+2. Extract Training Data (PIT-compliant)
+   ↓
+3. Train Challenger Model
+   ↓
+4. Validate: SPA/DSR/PBO Gates
+   ↓
+5. Shadow Mode (1 week)
+   ↓
+6. Compare Champion vs Challenger
+   ↓
+7. Promote if Gates Pass
+   ↓
+8. Deploy to Production
+```
+
+**Config**:
+```yaml
+RETRAIN_CRON: "0 3 1 * *"  # Monthly, 3am on 1st
+PROMOTION_GATE: true
+SHADOW_MODE_DAYS: 7
+MIN_SHARPE_IMPROVEMENT: 0.1
+MAX_DRAWDOWN_TOLERANCE: 0.02
+AUTO_ROLLBACK_ENABLED: true
+```
+
+**Tests**: `tests/mlops/test_promotion_gate.py`
+
+**Acceptance Criteria**:
+- ✅ Promote only when SPA/DSR/PBO gates pass
+- ✅ Rollback verified: can revert to previous model in < 5 minutes
+- ✅ Champion/challenger comparison automated
+- ✅ Training reproducibility: same data → same model
+- ✅ Automated alerts on training failures
+
+---
+
+### **Weeks 15-16: Execution Lifecycle** 🟡 MEDIUM PRIORITY
+
+#### 4.C Execution Lifecycle
+
+**Objective**: Intelligent order execution with comprehensive attribution
+
+##### ✅ Smart Order Routing (SOR) & Venue Profiles
+
+**Files**:
+- `services/strategy-service/app/execution/sor_router.py`
+- `services/strategy-service/app/execution/venue_profiles.yaml`
+- `services/strategy-service/app/execution/routing_optimizer.py`
+
+**Venue Profiles**:
+```yaml
+venues:
+  - name: NASDAQ
+    latency_p50_ms: 12
+    latency_p99_ms: 45
+    maker_fee_bps: 0.3
+    taker_fee_bps: 0.9
+    min_tick_size: 0.01
+    supports_ioc: true
+    supports_post_only: true
+
+  - name: NYSE_ARCA
+    latency_p50_ms: 18
+    latency_p99_ms: 60
+    maker_fee_bps: 0.2
+    taker_fee_bps: 1.0
+
+  - name: IEX
+    latency_p50_ms: 25
+    latency_p99_ms: 80
+    maker_fee_bps: -0.9  # Rebate
+    taker_fee_bps: 0.9
+```
+
+**Routing Logic**:
+```python
+def route_order(order, venues, market_data):
+    """
+    Route order to optimal venue based on:
+    1. Spread (best available price)
+    2. Latency (time to fill)
+    3. Fees (maker/taker)
+    4. Fill probability
+    5. Historical performance
+    """
+    scores = []
+    for venue in venues:
+        spread_score = calculate_spread_advantage(venue, market_data)
+        latency_score = 1.0 / venue.latency_p50_ms
+        fee_score = -venue.get_fee(order.side)
+        fill_prob = venue.historical_fill_rate(order.type)
+
+        total_score = (
+            0.4 * spread_score +
+            0.3 * latency_score +
+            0.2 * fee_score +
+            0.1 * fill_prob
+        )
+        scores.append((venue, total_score))
+
+    return max(scores, key=lambda x: x[1])[0]
+```
+
+**Config**:
+```yaml
+SOR_ENABLED: true
+SOR_LATENCY_BUDGET_MS: 10  # Max routing decision time
+SOR_MIN_SPREAD_IMPROVEMENT_BPS: 0.5
+SOR_ENABLE_ML_ROUTING: false  # Phase 5 feature
+```
+
+**Tests**: `tests/execution/test_sor_decisions.py`
+- Test routing heuristics
+- Test latency budget compliance
+- Test shadow mode comparison
+- Test venue failover
+
+**Acceptance Criteria**:
+- ✅ Slippage reduction ≥10% vs baseline (30-day average)
+- ✅ SOR decision latency p99 < 10ms
+- ✅ Routing accuracy: ≥95% select optimal venue in hindsight analysis
+- ✅ Cost savings documented per venue (fees + spreads)
+- ✅ Shadow mode validation: 30 days clean before production
+
+##### ✅ Trade Journal & P&L Attribution
+
+**Files**:
+- `services/trade-journal/app/main.py`
+- `services/trade-journal/app/models/trade_fill.py`
+- `services/trade-journal/app/services/attribution_service.py`
+
+**Database Tables**:
+```sql
+CREATE TABLE trade_fills (
+    fill_id SERIAL PRIMARY KEY,
+    order_id VARCHAR(255) NOT NULL,
+    symbol VARCHAR(50) NOT NULL,
+    side VARCHAR(10) NOT NULL,
+    quantity INT NOT NULL,
+    fill_price DECIMAL(10,4) NOT NULL,
+    fill_time TIMESTAMPTZ NOT NULL,
+    venue VARCHAR(50) NOT NULL,
+    strategy_id VARCHAR(255),
+    CONSTRAINT fk_order FOREIGN KEY(order_id) REFERENCES orders(order_id)
+);
+
+CREATE TABLE fees (
+    fee_id SERIAL PRIMARY KEY,
+    fill_id INT NOT NULL,
+    fee_type VARCHAR(50) NOT NULL,  -- exchange, sec, taf, etc
+    fee_amount DECIMAL(10,4) NOT NULL,
+    CONSTRAINT fk_fill FOREIGN KEY(fill_id) REFERENCES trade_fills(fill_id)
+);
+
+CREATE TABLE borrow_costs (
+    borrow_id SERIAL PRIMARY KEY,
+    symbol VARCHAR(50) NOT NULL,
+    date DATE NOT NULL,
+    quantity INT NOT NULL,
+    borrow_rate DECIMAL(8,6) NOT NULL,
+    daily_cost DECIMAL(10,4) NOT NULL
+);
+
+CREATE TABLE pnl_attrib (
+    attrib_id SERIAL PRIMARY KEY,
+    date DATE NOT NULL,
+    strategy_id VARCHAR(255),
+    total_pnl DECIMAL(15,4) NOT NULL,
+    alpha_pnl DECIMAL(15,4),
+    timing_pnl DECIMAL(15,4),
+    selection_pnl DECIMAL(15,4),
+    fees_pnl DECIMAL(15,4),
+    slippage_pnl DECIMAL(15,4),
+    borrow_pnl DECIMAL(15,4),
+    UNIQUE(date, strategy_id)
+);
+```
+
+**API**:
+- `GET /journal/trades?start=<date>&end=<date>&strategy=<id>` - Query trades
+- `GET /journal/fills/{fill_id}` - Fill details
+- `GET /journal/pnl_attrib?date=<date>&strategy=<id>` - P&L attribution
+- `POST /journal/reconcile` - Trigger broker reconciliation
+
+**Tests**: `tests/trade_journal/test_reconciliation.py`
+
+**Acceptance Criteria**:
+- ✅ 100% fills reconcile to broker statements (<1 bp variance)
+- ✅ Daily P&L attribution reports auto-generated
+- ✅ Trade query performance: p99 < 200ms for 30-day window
+- ✅ Audit trail: complete lineage from signal → order → fill → P&L
+
+##### ✅ Latency & Halt-Safe Execution (Extended)
+
+**Files**:
+- `services/strategy-service/app/execution/venue_rules.py` (from Phase 3)
+- `services/strategy-service/app/execution/reopen_auctions.py` (NEW)
+- `services/strategy-service/app/execution/order_types_extended.py` (NEW)
+
+**New Features**:
+- Reopen auction participation logic
+- Price band validation (LULD)
+- ISO (Intermarket Sweep Order) support
+- Pegged orders (mid-point, primary peg)
+
+**Config**:
+```yaml
+ENABLE_REOPEN_AUCTIONS: true
+ENABLE_ISO_ORDERS: true
+ENABLE_PEGGED_ORDERS: true
+LULD_BAND_CHECK: true
+```
+
+**Tests**: `tests/execution/test_reopen_auctions.py`
+
+**Acceptance Criteria**:
+- ✅ Zero regulatory breaches over 90 days
+- ✅ Full traceability: every order decision logged
+- ✅ LULD band violations: 0 (automated prevention)
+- ✅ Halt detection latency: < 1 second
+
+---
+
+### **Week 17: Security Hardening** 🔴 CRITICAL
+
+#### 4.D Security, Deployment & Testing
+
+**Objective**: Production-grade security and deployment practices
+
+##### ✅ Secrets Management (Vault/Cloud)
+
+**Files**:
+- `infrastructure/terraform/vault/*.tf`
+- `infrastructure/secrets/policies.hcl`
+- `services/*/app/config/secrets_loader.py`
+
+**Secrets Backend Options**:
+1. **HashiCorp Vault** (self-hosted)
+2. **AWS Secrets Manager** (cloud)
+3. **GCP Secret Manager** (cloud)
+4. **Azure Key Vault** (cloud)
+
+**Config**:
+```yaml
+SECRETS_BACKEND: vault|aws_secrets|gcp_secrets|azure_keyvault
+VAULT_ADDR: https://vault.internal:8200
+KEY_ROTATION_DAYS: 90
+SECRETS_CACHE_TTL_SECONDS: 300
+```
+
+**Vault Policies**:
+```hcl
+# Policy for trading service
+path "secret/data/trading/*" {
+  capabilities = ["read"]
+}
+
+path "database/creds/trading_db" {
+  capabilities = ["read"]
+}
+```
+
+**Tests**: `tests/security/test_secrets_rotation.py`
+
+**Acceptance Criteria**:
+- ✅ All API keys rotated every 90 days automatically
+- ✅ No plaintext secrets in repos (git-secrets pre-commit hook)
+- ✅ Secrets access audited: who accessed what, when
+- ✅ Revocation tested: old secrets rejected within 60 seconds
+
+##### ✅ Supply Chain & Container Hardening
+
+**Files**:
+- `.github/workflows/ci_security.yml`
+- `Dockerfile.hardened`
+- `.github/workflows/image_signing.yml`
+
+**Security Scanning**:
+```yaml
+# .github/workflows/ci_security.yml
+name: Security Scan
+on: [push, pull_request]
+
+jobs:
+  trivy_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'  # Fail build on findings
+
+  grype_scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: anchore/scan-action@v3
+        with:
+          severity-cutoff: high
+```
+
+**Hardened Dockerfile**:
+```dockerfile
+# Multi-stage build
+FROM python:3.10-slim AS builder
+RUN pip install --user --no-cache-dir -r requirements.txt
+
+# Distroless runtime (no shell, minimal attack surface)
+FROM gcr.io/distroless/python3-debian11
+COPY --from=builder /root/.local /root/.local
+COPY app /app
+USER nonroot:nonroot  # Non-root user
+ENTRYPOINT ["python", "/app/main.py"]
+```
+
+**Image Signing (Cosign)**:
+```yaml
+# Sign container images
+- name: Sign image
+  run: |
+    cosign sign --key cosign.key $IMAGE_TAG
+
+# Admission policy: only signed images allowed
+apiVersion: v1
+kind: Policy
+spec:
+  images:
+    - namePattern: "*/trading-*"
+      signatures:
+        - keyRef: "cosign-pub-key"
+```
+
+**Tests**: `tests/security/test_container_hardening.py`
+
+**Acceptance Criteria**:
+- ✅ 0 High/Critical CVEs in production images
+- ✅ All images signed with Cosign
+- ✅ Kubernetes admission controller: only signed images allowed
+- ✅ SBOM (Software Bill of Materials) generated for all images
+- ✅ Weekly security scans automated
+
+##### ✅ IaC + Policy-as-Code
+
+**Files**:
+- `infrastructure/terraform/*` (All infrastructure)
+- `infrastructure/policy/opa/*.rego` (OPA policies)
+- `infrastructure/policy/sentinel/*.sentinel` (Terraform Cloud)
+
+**Terraform Structure**:
+```
+infrastructure/
+├── terraform/
+│   ├── environments/
+│   │   ├── dev/
+│   │   ├── staging/
+│   │   └── prod/
+│   ├── modules/
+│   │   ├── vpc/
+│   │   ├── eks/
+│   │   ├── rds/
+│   │   └── redis/
+│   └── global/
+│       ├── iam/
+│       └── route53/
+```
+
+**OPA Policy Example**:
+```rego
+# policy/opa/require_tags.rego
+package terraform.required_tags
+
+required_tags = ["environment", "owner", "cost_center"]
+
+deny[msg] {
+  resource := input.resource_changes[_]
+  resource.type == "aws_instance"
+  tags := object.get(resource.change.after, "tags", {})
+  missing := required_tags[_]
+  not tags[missing]
+  msg := sprintf("Resource %s missing required tag: %s", [resource.address, missing])
+}
+```
+
+**Tests**: `tests/infrastructure/test_opa_policies.py`
+
+**Acceptance Criteria**:
+- ✅ Terraform drift detection clean (no manual changes)
+- ✅ Least-privilege IAM enforced via OPA policies
+- ✅ All resources tagged (environment, owner, cost_center)
+- ✅ Terraform plan reviewed before apply (required approvals)
+- ✅ State file encrypted and versioned
+
+##### ✅ Test Strategy Expansion
+
+**Files**:
+- `tests/unit/` - Unit tests (existing)
+- `tests/integration/` - Integration tests (existing)
+- `tests/synthetic/test_extreme_regimes.py` - NEW
+- `chaos/` - Chaos tests (from Phase 3)
+- `tests/load/locust/*.py` - NEW
+
+**Synthetic Regime Testing**:
+```python
+# tests/synthetic/test_extreme_regimes.py
+def test_flash_crash_regime():
+    """Test system behavior during flash crash"""
+    market_data = generate_flash_crash_scenario(
+        initial_price=100,
+        crash_magnitude=0.20,  # -20%
+        crash_duration_minutes=5,
+        recovery_minutes=30
+    )
+
+    # Run strategy through synthetic data
+    result = backtest_with_data(strategy, market_data)
+
+    # Assertions
+    assert result.max_drawdown < 0.10  # Circuit breaker should trigger
+    assert result.circuit_breaker_triggered == True
+    assert result.recovery_time_minutes < 60
+
+def test_high_volatility_regime():
+    """Test during VIX > 40 periods"""
+    market_data = generate_high_vol_regime(vix_level=45)
+    result = backtest_with_data(strategy, market_data)
+
+    # Position sizing should reduce automatically
+    assert result.avg_position_size < normal_position_size * 0.5
+```
+
+**Load Testing (Locust)**:
+```python
+# tests/load/locust/trading_load.py
+from locust import HttpUser, task, between
+
+class TradingUser(HttpUser):
+    wait_time = between(0.1, 0.5)
+
+    @task(weight=10)
+    def get_signals(self):
+        self.client.get("/signals/latest?strategy=momentum")
+
+    @task(weight=5)
+    def submit_order(self):
+        self.client.post("/orders", json={
+            "symbol": "AAPL",
+            "side": "buy",
+            "quantity": 100,
+            "order_type": "market"
+        })
+
+    @task(weight=2)
+    def get_positions(self):
+        self.client.get("/positions")
+```
+
+**Tests**: Comprehensive suite across all test types
+
+**Acceptance Criteria**:
+- ✅ MTTR < 30 min maintained across 90 days
+- ✅ Graceful degradation verified under 5x load
+- ✅ Synthetic regime tests: all extreme scenarios handled
+- ✅ Load test: system handles 10x current load
+
+---
+
+### **Week 18: Reliability & Disaster Recovery** 🟡 MEDIUM PRIORITY
+
+#### 4.F Streaming Guardrails & Reliability
+
+**Objective**: Bulletproof streaming infrastructure
+
+##### ✅ Champion-Challenger in Stream
+
+**Files**:
+- `services/inference-stream/app/router.py`
+- `services/inference-stream/app/divergence_monitor.py`
+
+**Architecture**:
+```
+Stream Input
+     ↓
+  Router (split traffic)
+  ↙         ↘
+Champion   Challenger
+  ↘         ↙
+Divergence Monitor → Metrics
+     ↓
+ (Use Champion for actual decisions)
+```
+
+**Metrics**:
+```
+inference_divergence_mae{model="challenger_v2"}
+cost_per_1k_preds{model="..."}
+prediction_latency_ms{model="...", percentile="p99"}
+```
+
+**Tests**: `tests/streaming/test_champion_challenger.py`
+
+**Acceptance Criteria**:
+- ✅ Promote only when divergence low (<5% MAE) AND gates pass
+- ✅ Automatic rollback if divergence spikes
+- ✅ Cost tracking: challenger must be cost-effective
+- ✅ A/B test results statistically significant
+
+##### ✅ Backpressure & DLQ (Dead Letter Queue)
+
+**Files**:
+- `infrastructure/streaming/dlq_setup.tf`
+- `services/streaming/dlq_processor.py`
+- `ops/monitoring/dlq_alerts.py`
+
+**DLQ Topics**:
+- `dlq.features` - Failed feature messages
+- `dlq.orders` - Failed order messages
+- `dlq.fills` - Failed fill messages
+
+**DLQ Processor**:
+```python
+def process_dlq_message(message):
+    """
+    1. Log error details
+    2. Attempt reprocessing with backoff
+    3. Alert if persistent failure
+    4. Move to manual review queue if unrecoverable
+    """
+    try:
+        # Attempt reprocessing
+        result = reprocess_with_retry(message, max_retries=3)
+        if result.success:
+            metrics.dlq_recovery_success.inc()
+            return
+    except Exception as e:
+        # Move to manual review
+        manual_review_queue.put(message)
+        alert_ops_team(message, e)
+```
+
+**Backpressure Handling**:
+```python
+# Consumer with backpressure
+def consume_with_backpressure(stream, max_lag_ms=1000):
+    while True:
+        lag = stream.get_lag()
+
+        if lag > max_lag_ms:
+            # Slow down or stop processing
+            logger.warning(f"High lag detected: {lag}ms. Applying backpressure.")
+            time.sleep(0.1)
+            continue
+
+        message = stream.read()
+        process_message(message)
+```
+
+**Tests**: `tests/streaming/test_backpressure.py`
+
+**Acceptance Criteria**:
+- ✅ Zero data loss under normal operations
+- ✅ DLQ drained < 24h SLA
+- ✅ Backpressure triggers before OOM
+- ✅ Stream lag alerts fire before impact
+
+#### 4.G Disaster Recovery & Broker Truth
+
+##### ✅ RTO/RPO & DR Drills
+
+**Disaster Recovery Setup**:
+```
+Primary Region (us-east-1)
+    ↓ (continuous replication)
+DR Region (us-west-2)
+    - Timescale replica (streaming replication)
+    - Redis replica (async replication)
+    - MLflow backup (S3 cross-region replication)
+```
+
+**Config**:
+```yaml
+RTO_MINUTES: 60  # Recovery Time Objective
+RPO_MINUTES: 5   # Recovery Point Objective
+DR_REGION: us-west-2
+DR_DRILL_FREQUENCY: quarterly
+```
+
+**DR Drill Procedure**:
+```
+1. Announcement (T-24h)
+2. Simulate primary region failure
+3. Initiate failover to DR region
+4. Verify all services operational
+5. Run smoke tests
+6. Failback to primary region
+7. Post-drill review
+```
+
+**Tests**: `tests/dr/test_failover.py`
+
+**Acceptance Criteria**:
+- ✅ DR drill meets RTO (60 min) and RPO (5 min) targets
+- ✅ Quarterly DR drills successful
+- ✅ Automated failover tested
+- ✅ Data loss < RPO during drill
+
+##### ✅ Broker Reconciliation
+
+**Files**:
+- `ops/recon/broker_recon.py`
+- `ops/recon/variance_alerts.py`
+
+**Reconciliation Process**:
+```python
+def daily_broker_reconciliation(date):
+    """
+    1. Fetch fills from our system
+    2. Fetch fills from broker API
+    3. Match fills by order_id
+    4. Calculate variances
+    5. Alert on significant differences
+    """
+    our_fills = get_fills_from_db(date)
+    broker_fills = fetch_broker_fills(date)
+
+    matched, unmatched_ours, unmatched_broker = match_fills(
+        our_fills, broker_fills
+    )
+
+    variances = []
+    for our_fill, broker_fill in matched:
+        price_diff = abs(our_fill.price - broker_fill.price)
+        qty_diff = abs(our_fill.quantity - broker_fill.quantity)
+
+        if price_diff > 0.01 or qty_diff > 0:
+            variances.append({
+                'order_id': our_fill.order_id,
+                'price_variance_bps': (price_diff / our_fill.price) * 10000,
+                'qty_variance': qty_diff
+            })
+
+    # Check variance threshold
+    avg_variance_bps = mean([v['price_variance_bps'] for v in variances])
+    if avg_variance_bps > 1.0:  # > 1 bp average
+        alert_persistent_drift(date, avg_variance_bps)
+```
+
+**API**:
+- `GET /ops/recon/status?date=YYYY-MM-DD` - Reconciliation status
+- `GET /ops/recon/variances?date=YYYY-MM-DD` - Variance report
+- `POST /ops/recon/force` - Force reconciliation run
+
+**Tests**: `tests/recon/test_broker_matching.py`
+
+**Acceptance Criteria**:
+- ✅ Price variance ≤1 bp for ≥99% of fills
+- ✅ Quantity variance: 0 (exact match required)
+- ✅ Persistent drift (>3 days) auto-ticketed
+- ✅ Reconciliation runs daily, completes in <10 minutes
+
+---
+
+### **Weeks 19-20: Data Expansion & Collaboration** 🟢 LOW PRIORITY
+
+#### 4.E Collaboration, Stress Testing & Data Expansion
+
+##### ✅ Scenario Simulation Engine
+
+**Files**:
+- `simulation/scenario_engine.py`
+- `simulation/packs/*.json` (scenario definitions)
+- `simulation/reports/breach_reporter.py`
+
+**Scenario Packs**:
+```json
+// simulation/packs/flash_crash.json
+{
+  "name": "Flash Crash 2010",
+  "description": "Simulate May 6, 2010 flash crash",
+  "market_conditions": {
+    "initial_price": 100,
+    "drop_magnitude": 0.09,  // -9%
+    "drop_duration_minutes": 5,
+    "recovery_duration_minutes": 20
+  },
+  "expected_behavior": {
+    "max_drawdown": 0.05,  // Should limit to -5%
+    "circuit_breaker_triggers": true,
+    "positions_flattened": true
+  }
+}
+
+// simulation/packs/volatility_regime.json
+{
+  "name": "High Volatility Regime",
+  "description": "VIX > 40 sustained period",
+  "market_conditions": {
+    "vix_level": 45,
+    "duration_days": 30,
+    "sector_correlations": 0.9  // High correlation
+  },
+  "expected_behavior": {
+    "position_sizing_reduced": true,
+    "risk_limits_adjusted": true,
+    "alpha_degradation_acceptable": 0.2  // <20% alpha loss
+  }
+}
+```
+
+**API**:
+- `POST /simulation/run?scenario=<name>&strategy=<id>` - Run simulation
+- `GET /simulation/results/{run_id}` - Simulation results
+- `GET /simulation/scenarios` - List available scenarios
+
+**Breach Reporter**:
+```python
+def generate_breach_report(simulation_result, expected_behavior):
+    """
+    Auto-generate breach reports and create tickets
+    """
+    breaches = []
+
+    if simulation_result.max_drawdown > expected_behavior['max_drawdown']:
+        breaches.append({
+            'type': 'max_drawdown_breach',
+            'expected': expected_behavior['max_drawdown'],
+            'actual': simulation_result.max_drawdown,
+            'severity': 'HIGH'
+        })
+
+    if breaches:
+        # Create Jira ticket
+        ticket = create_jira_ticket(
+            title=f"Simulation Breach: {scenario.name}",
+            description=format_breaches(breaches),
+            priority='High',
+            assignee='risk_team'
+        )
+
+        # Generate detailed report
+        report_path = generate_pdf_report(simulation_result, breaches)
+
+        return {
+            'breaches': breaches,
+            'ticket_id': ticket.id,
+            'report_path': report_path
+        }
+```
+
+**Tests**: `tests/simulation/test_scenarios.py`
+
+**Acceptance Criteria**:
+- ✅ Breach reports auto-generated for all failed scenarios
+- ✅ Remediation tickets created automatically
+- ✅ All critical scenarios (flash crash, VIX spike, correlation breakdown) pass
+- ✅ Monthly scenario review with risk team
+
+##### ✅ Alt-Data Onboarding + ROI
+
+**Files**:
+- `altdata/onboarding_checklist.md`
+- `altdata/connectors/*.py`
+- `altdata/roi_estimator.py`
+
+**Onboarding Checklist**:
+```markdown
+# Alt-Data Onboarding Checklist
+
+## 1. Legal & Compliance
+- [ ] License agreement reviewed
+- [ ] Data usage rights confirmed
+- [ ] MNPI screening completed
+- [ ] Privacy compliance (GDPR/CCPA) verified
+
+## 2. Technical Evaluation
+- [ ] Data format documented
+- [ ] Delivery mechanism tested (API/FTP/S3)
+- [ ] PIT compliance verified
+- [ ] Backfill available (min 2 years)
+
+## 3. Quality Assessment
+- [ ] Data quality expectations defined
+- [ ] Historical consistency checked
+- [ ] Missing data patterns analyzed
+- [ ] Revision frequency documented
+
+## 4. Alpha Assessment
+- [ ] Backtest with alt-data feature
+- [ ] Calculate IR uplift
+- [ ] Estimate cost per IR improvement
+- [ ] Compare to threshold (gate decision)
+
+## 5. Production Integration
+- [ ] Connector implemented
+- [ ] Monitoring alerts configured
+- [ ] Fallback strategy defined
+- [ ] Documentation completed
+```
+
+**ROI Estimator**:
+```python
+def estimate_altdata_roi(
+    altdata_cost_annual: float,
+    baseline_sharpe: float,
+    altdata_sharpe: float,
+    portfolio_capital: float
+) -> Dict:
+    """
+    Estimate ROI of alt-data subscription
+
+    Returns decision: onboard if IR_uplift_per_$ ≥ threshold
+    """
+    # Calculate uplift
+    sharpe_uplift = altdata_sharpe - baseline_sharpe
+
+    # Convert Sharpe to expected return (simplified)
+    baseline_return = baseline_sharpe * 0.15  # Assume 15% vol
+    altdata_return = altdata_sharpe * 0.15
+    return_uplift = altdata_return - baseline_return
+
+    # Calculate annual benefit
+    annual_benefit = portfolio_capital * return_uplift
+
+    # Calculate ROI
+    roi = (annual_benefit - altdata_cost_annual) / altdata_cost_annual
+    ir_uplift_per_dollar = sharpe_uplift / altdata_cost_annual
+
+    # Gate decision
+    threshold_ir_per_dollar = 0.1 / 10000  # 0.1 Sharpe per $10K
+    should_onboard = ir_uplift_per_dollar >= threshold_ir_per_dollar
+
+    return {
+        'sharpe_uplift': sharpe_uplift,
+        'annual_benefit': annual_benefit,
+        'annual_cost': altdata_cost_annual,
+        'roi_percent': roi * 100,
+        'ir_uplift_per_dollar': ir_uplift_per_dollar,
+        'should_onboard': should_onboard,
+        'break_even_capital': altdata_cost_annual / return_uplift
+    }
+```
+
+**Tests**: `tests/altdata/test_roi_estimator.py`
+
+**Acceptance Criteria**:
+- ✅ Onboard only if IR_uplift_per_$ ≥ threshold
+- ✅ All alt-data sources have ROI estimates
+- ✅ Quarterly ROI review (actual vs projected)
+- ✅ Automated data quality monitoring
+
+##### ✅ Research Environment (RBAC JupyterHub)
+
+**Files**:
+- `infrastructure/jupyterhub/values.yaml`
+- `notebooks/pipelines/*.ipynb`
+- `notebooks/templates/*.ipynb`
+
+**JupyterHub Config**:
+```yaml
+# values.yaml
+hub:
+  config:
+    Authenticator:
+      admin_users:
+        - research_lead
+      allowed_users:
+        - quant_1
+        - quant_2
+
+    JupyterHub:
+      authenticator_class: oauth
+
+singleuser:
+  image:
+    name: trading-research
+    tag: latest
+
+  profileList:
+    - display_name: "Small (2 CPU, 4GB RAM)"
+      kubespawner_override:
+        cpu_limit: 2
+        mem_limit: "4G"
+
+    - display_name: "Large (8 CPU, 32GB RAM)"
+      kubespawner_override:
+        cpu_limit: 8
+        mem_limit: "32G"
+
+  storage:
+    capacity: 10Gi
+    dynamic:
+      storageClass: fast-ssd
+```
+
+**Notebook Templates**:
+```python
+# notebooks/templates/backtest_template.ipynb
+"""
+Standard Backtest Template
+
+This notebook provides reproducible backtesting with PIT guarantees.
+"""
+
+import pandas as pd
+from backtesting import BacktestEngine
+from features import FeatureStore
+
+# 1. Configuration
+AS_OF_TIMESTAMP = "2024-01-01T00:00:00Z"  # CRITICAL: PIT cutoff
+STRATEGY_PARAMS = {
+    'lookback_days': 30,
+    'threshold': 0.02
+}
+
+# 2. Load PIT-compliant features
+feature_store = FeatureStore(as_of=AS_OF_TIMESTAMP)
+features = feature_store.get_historical_features(
+    symbols=['AAPL', 'GOOGL'],
+    start='2020-01-01',
+    end='2023-12-31'
+)
+
+# 3. Run backtest
+engine = BacktestEngine()
+result = engine.run(
+    features=features,
+    strategy=my_strategy,
+    params=STRATEGY_PARAMS
+)
+
+# 4. Validate
+assert result.pit_compliant == True, "PIT compliance check failed!"
+
+# 5. Results
+print(f"Sharpe: {result.sharpe}")
+print(f"Max DD: {result.max_drawdown}")
+```
+
+**Tests**: `tests/jupyterhub/test_reproducibility.py`
+
+**Acceptance Criteria**:
+- ✅ Reproducible kernels: same as_of_ts → identical results
+- ✅ RBAC enforced: users only access permitted data
+- ✅ Notebooks version-controlled (Git integration)
+- ✅ Compute resources monitored and throttled
+
+---
+
+### **Week 21: Specialized Components** 🟢 LOW PRIORITY
+
+#### 4.H Security, Licensing & Entitlements
+
+##### ✅ Data Licensing & MNPI Controls
+
+**Files**:
+- `data_governance/policies.py`
+- `data_governance/license_validator.py`
+- `data_governance/mnpi_scanner.py`
+
+**License Validation**:
+```python
+# Pre-commit hook
+def validate_data_licenses(changed_files):
+    """
+    Fail build if unlicensed data used
+    """
+    for file in changed_files:
+        datasets = extract_datasets(file)
+        for dataset in datasets:
+            license = get_license(dataset)
+
+            if not license.permits_use('production'):
+                raise LicenseViolation(
+                    f"Dataset {dataset} not licensed for production use"
+                )
+
+            if license.requires_attribution:
+                check_attribution_present(file, dataset)
+```
+
+**MNPI Scanner**:
+```python
+def scan_for_mnpi(dataset, date):
+    """
+    Scan for Material Non-Public Information
+    """
+    # Check if data was public at time of use
+    public_timestamp = get_public_timestamp(dataset, date)
+
+    if public_timestamp > date:
+        alert_compliance_team({
+            'violation_type': 'MNPI',
+            'dataset': dataset,
+            'date': date,
+            'public_timestamp': public_timestamp,
+            'lookback_days': (public_timestamp - date).days
+        })
+
+        return False  # Not public yet
+
+    return True  # Safe to use
+```
+
+**Tests**: `tests/governance/test_mnpi_controls.py`
+
+**Acceptance Criteria**:
+- ✅ Builds fail on license violations
+- ✅ Builds fail on MNPI violations
+- ✅ Quarterly license audit clean
+- ✅ MNPI violations: zero in production
+
+##### ✅ Service Entitlements & Least-Privilege
+
+**Authentication**: OIDC/JWT with identity provider
+
+**Authorization**: Row-level security by symbol scope
+```sql
+-- Postgres RLS (Row Level Security)
+CREATE POLICY symbol_access_policy ON trades
+    USING (symbol IN (
+        SELECT symbol FROM user_entitlements
+        WHERE user_id = current_user_id()
+    ));
+```
+
+**Service Mesh (Istio)**:
+```yaml
+# Authorization policy
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: trading-service-authz
+spec:
+  selector:
+    matchLabels:
+      app: trading-service
+  rules:
+    - from:
+      - source:
+          principals: ["cluster.local/ns/default/sa/strategy-service"]
+      to:
+      - operation:
+          methods: ["POST"]
+          paths: ["/orders"]
+```
+
+**Tests**: `tests/security/test_least_privilege.py`
+
+**Acceptance Criteria**:
+- ✅ Pen-test cannot exfiltrate out-of-scope symbols
+- ✅ All API calls authenticated and authorized
+- ✅ Service-to-service mTLS enforced
+- ✅ Audit log: all data access recorded
+
+#### 4.I Options & Corporate Actions Hygiene
+
+##### ✅ IV Surface No-Arb & Smoothing
+
+**Files**:
+- `services/analysis-service/app/options/iv_surface.py`
+- `services/analysis-service/app/options/arbitrage_detector.py`
+
+**IV Surface Validation**:
+```python
+def validate_iv_surface(surface):
+    """
+    Check implied volatility surface for:
+    1. Arbitrage opportunities (calendar spreads, butterflies)
+    2. Smoothness (no wild spikes)
+    3. Monotonicity (far OTM → higher IV typically)
+    """
+    issues = []
+
+    # Check calendar arbitrage
+    for strike in surface.strikes:
+        short_term_iv = surface.get_iv(strike, '30d')
+        long_term_iv = surface.get_iv(strike, '90d')
+
+        if short_term_iv > long_term_iv + 0.05:  # Violation
+            issues.append({
+                'type': 'calendar_arbitrage',
+                'strike': strike,
+                'short_iv': short_term_iv,
+                'long_iv': long_term_iv
+            })
+
+    # Check smoothness (detect spikes)
+    ivs = [surface.get_iv(k, '30d') for k in surface.strikes]
+    for i in range(1, len(ivs)-1):
+        spike = abs(ivs[i] - (ivs[i-1] + ivs[i+1])/2)
+        if spike > 0.10:  # >10pp spike
+            issues.append({
+                'type': 'smoothness_violation',
+                'strike': surface.strikes[i],
+                'spike_size': spike
+            })
+
+    flagged_pct = len(issues) / len(surface.strikes) * 100
+
+    return {
+        'is_valid': flagged_pct < 0.5,  # <0.5% flagged
+        'flagged_percent': flagged_pct,
+        'issues': issues
+    }
+```
+
+**Tests**: `tests/options/test_iv_surface.py`
+
+**Acceptance Criteria**:
+- ✅ <0.5% of chains flagged for arbitrage/smoothness
+- ✅ Surfaces finite and monotone (no NaN/Inf values)
+- ✅ Automated alerts on surface anomalies
+- ✅ Surface regeneration < 1 minute on data update
+
+##### ✅ Corporate Actions Correctness
+
+**Files**:
+- `libs/pricing/corporate_actions.py`
+- `libs/pricing/adjustment_rules.py`
+
+**Corporate Action Adjustments**:
+```python
+class CorporateActionAdjuster:
+    """
+    Adjust prices and quantities for splits, dividends, etc.
+    """
+
+    def adjust_for_split(self, trade, split_ratio):
+        """
+        2:1 split → quantity *= 2, price /= 2
+        """
+        return Trade(
+            symbol=trade.symbol,
+            date=trade.date,
+            quantity=trade.quantity * split_ratio,
+            price=trade.price / split_ratio,
+            adjusted=True,
+            adjustment_type='split',
+            adjustment_ratio=split_ratio
+        )
+
+    def adjust_for_dividend(self, price, dividend_amount, is_special=False):
+        """
+        On ex-dividend date, adjust historical prices
+        """
+        if is_special:
+            # Special dividends: subtract from price
+            return price - dividend_amount
+        else:
+            # Regular dividends: typically no price adjustment
+            # (depends on methodology)
+            return price
+```
+
+**Validation**:
+```python
+def validate_corporate_actions_in_backtest(backtest_result):
+    """
+    Ensure backtests are invariant where expected
+    """
+    # Run backtest with and without adjustments
+    result_adjusted = run_backtest(adjust_prices=True)
+    result_unadjusted = run_backtest(adjust_prices=False)
+
+    # For total return strategies, results should be similar
+    # For price-only strategies, results will differ
+
+    sharpe_diff = abs(result_adjusted.sharpe - result_unadjusted.sharpe)
+
+    # Should be explainable
+    assert sharpe_diff < 0.5 or has_explanation(result_adjusted, result_unadjusted)
+```
+
+**Tests**: `tests/pricing/test_corporate_actions.py`
+
+**Acceptance Criteria**:
+- ✅ CAR/backtests invariant where expected
+- ✅ All corporate actions processed within 24h of announcement
+- ✅ Split adjustments: 100% accurate (zero errors)
+- ✅ Dividend adjustments documented and auditable
+
+---
+
+## 📊 Phase 4 Definition of Done (Technical)
+
+- [ ] **Data Foundation**: Feature store operational; offline/online skew <1%; DQ ≥99% pass
+- [ ] **ML Ops**: Streaming inference p99 <50ms; champion/challenger automated; retrains scheduled
+- [ ] **Execution**: SOR reduces slippage ≥10%; 100% fills reconcile to broker; zero regulatory breaches
+- [ ] **Security**: 0 High/Critical CVEs; secrets rotated; signed images only; drift detection clean
+- [ ] **Reliability**: DR drill meets RTO/RPO; DLQ <24h SLA; backpressure handling verified
+- [ ] **Research**: JupyterHub reproducible; alt-data ROI gated; simulation scenarios pass
+
+---
+
+## 🗓️ Suggested 12-Week Timeline
+
+| Week | Phase | Key Deliverables | Priority |
+|------|-------|------------------|----------|
+| 11 | 4.A (Part 1) | Feature store POC, decision (Feast vs Temporal) | 🔴 Critical |
+| 12 | 4.A (Part 2) | Data quality framework, backfill governance | 🔴 Critical |
+| 13 | 4.B (Part 1) | Streaming fabric (Kafka/Redis decision) | 🟡 High |
+| 14 | 4.B (Part 2) | Low-latency inference, champion/challenger | 🟡 High |
+| 15 | 4.C (Part 1) | Smart order routing, venue profiles | 🟡 High |
+| 16 | 4.C (Part 2) | Trade journal, P&L attribution, halt-safe extension | 🟡 High |
+| 17 | 4.D | Security: Secrets, IaC, container hardening, chaos tests | 🔴 Critical |
+| 18 | 4.F-G | Streaming guardrails, DR setup, broker reconciliation | 🟡 High |
+| 19 | 4.E (Part 1) | Scenario simulation engine | 🟢 Medium |
+| 20 | 4.E (Part 2) | Alt-data onboarding, JupyterHub | 🟢 Medium |
+| 21 | 4.H | Data licensing, MNPI controls, entitlements | 🟢 Medium |
+| 22 | 4.I | Options IV surface, corporate actions | 🟢 Low |
+
+---
+
+## 🚀 Success Metrics
+
+**By end of Phase 4, you should have**:
+
+✅ **Production-grade infrastructure**
+- Feature store serving features with <100ms p99 latency
+- Streaming pipeline handling 10K+ msg/s
+- Inference serving <50ms p99
+
+✅ **Operational excellence**
+- MTTR <30 min maintained
+- DR drills quarterly, meeting RTO/RPO
+- Zero security incidents
+
+✅ **Research acceleration**
+- Alt-data onboarding process: 2 weeks → 2 days
+- Reproducible research environment
+- Automated scenario testing
+
+✅ **Alpha expansion**
+- Smart order routing reducing costs 10%+
+- Comprehensive P&L attribution
+- ROI-gated alt-data adding alpha
+
+---
+
+**Phase 4 transforms your platform from functional to production-grade institutional quality.** 🏆
