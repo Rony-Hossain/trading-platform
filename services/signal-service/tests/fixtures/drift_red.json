@@ -1,0 +1,83 @@
+{
+  "scenario": "drift_red",
+  "description": "Model drift detected - predictions unreliable",
+  "inference_response": {
+    "predictions": [
+      {
+        "symbol": "GME",
+        "action": "HOLD",
+        "confidence": 0.35,
+        "expected_return": 0.001,
+        "risk_score": 0.95,
+        "model_version": "v1.2.3",
+        "drift_score": 0.85,
+        "drift_status": "red"
+      }
+    ],
+    "model_metadata": {
+      "version": "v1.2.3",
+      "trained_at": "2024-01-15T10:00:00Z",
+      "drift_detected": true,
+      "recommendation": "Use with caution - consider retraining"
+    }
+  },
+  "forecast_response": {
+    "forecasts": [
+      {
+        "symbol": "GME",
+        "current_price": 18.50,
+        "predictions": {
+          "1d": {"price": 18.75, "confidence": 0.30}
+        },
+        "technicals": {
+          "rsi": 48.0,
+          "macd": {"value": 0.05, "signal": 0.08, "histogram": -0.03},
+          "support": 15.00,
+          "resistance": 22.00,
+          "trend": "neutral"
+        },
+        "sector": "RETAIL",
+        "volatility": 0.15,
+        "avg_daily_volume": 25000000
+      }
+    ],
+    "timestamp": "2024-01-20T15:30:00Z"
+  },
+  "sentiment_response": {
+    "sentiments": [
+      {
+        "symbol": "GME",
+        "overall_score": -0.20,
+        "classification": "negative",
+        "confidence": 0.65,
+        "sources": {
+          "news": {"score": -0.30, "article_count": 80},
+          "social": {"score": 0.20, "mention_count": 15000},
+          "analyst": {"score": -0.40, "rating_count": 8}
+        },
+        "trending": true,
+        "momentum": "decreasing"
+      }
+    ],
+    "market_sentiment": {
+      "overall": "cautious",
+      "fear_greed_index": 40
+    },
+    "timestamp": "2024-01-20T15:30:00Z"
+  },
+  "portfolio_response": {
+    "user_id": "user123",
+    "total_value": 50000.00,
+    "cash": 8000.00,
+    "buying_power": 10000.00,
+    "daily_trades": 2,
+    "daily_pnl_pct": -0.8,
+    "sector_allocations": {
+      "RETAIL": 0.05,
+      "TECH": 0.50
+    },
+    "positions": []
+  },
+  "expected_picks": 0,
+  "expected_warnings": ["Model drift detected - use predictions with caution"]
+}

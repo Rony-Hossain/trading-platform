@@ -1,0 +1,86 @@
+version: "1.0"
+last_updated: "2025-10-02T10:00:00Z"
+
+# Beginner Mode Restrictions
+beginner_mode:
+  max_stop_distance_pct: 4.0        # Max 4% stop loss
+  min_liquidity_adv: 500000         # Min average daily volume
+  max_spread_bps: 20                # Max 20 basis points spread
+  max_position_pct_portfolio: 10.0  # Max 10% of portfolio per position
+  earnings_window_hours: 24         # Avoid trades within 24h of earnings
+  min_holding_period_sec: 300       # Minimum 5 minute hold
+
+# Volatility Brakes
+volatility_brakes:
+  # Sector-specific thresholds
+  sectors:
+    TECH: 0.035
+    FINANCE: 0.025
+    ENERGY: 0.045
+    HEALTHCARE: 0.030
+    CONSUMER: 0.028
+    DEFAULT: 0.030
+
+  # Fed meeting days (reduce positions)
+  fed_meeting_days:
+    - "2025-10-15"
+    - "2025-11-05"
+    - "2025-12-17"
+
+  # Position size multiplier during volatility
+  position_multiplier: 0.5  # Halve positions
+
+# Alert Configuration
+quiet_hours:
+  enabled: true
+  windows:
+    - "22:00-07:00"  # Night time
+    - "16:30-17:00"  # Market close cooldown
+
+# Reason Quality Scoring
+reason_scoring:
+  # Weight for each reason code (0-1)
+  weights:
+    support_bounce: 0.40
+    buyer_pressure: 0.30
+    momentum_shift: 0.35
+    oversold_rsi: 0.25
+    news_sentiment: 0.20
+    technical_breakout: 0.30
+    volume_surge: 0.25
+    trend_reversal: 0.35
+    earnings_surprise: 0.45
+    volatility_spike: 0.15
+
+  # Minimum score thresholds
+  min_score_beginner: 0.50
+  min_score_expert: 0.30
+
+# Fitness Checks (Pre-trade validation)
+fitness_checks:
+  min_adv_shares: 100000          # Minimum average daily volume
+  max_spread_bps: 30              # Maximum spread
+  max_price_jump_sigma: 3.0       # Max recent price jump (standard deviations)
+  lookback_minutes: 15            # Lookback window for price jump
+
+# Cache Configuration
+cache:
+  plan_ttl_seconds: 30
+  plan_swr_seconds: 10
+  alert_ttl_seconds: 10
+  explain_ttl_seconds: 3600
+
+# Conservative Mode (Emergency Override)
+conservative_mode:
+  enabled: false                  # Toggle this to true in emergencies
+  reason_score_threshold: 0.70    # Higher threshold
+  max_picks_per_plan: 2           # Limit picks
+  position_multiplier: 0.3        # Reduce positions by 70%
+  force_paper_trade: true         # Force paper trading only
+
+# Alert Throttling
+alert_throttling:
+  opportunity_cooldown_sec: 900   # 15 minutes between opportunity alerts
+  protect_cooldown_sec: 300       # 5 minutes between protect alerts
+  max_alerts_per_hour: 6          # Maximum alerts per hour per user
+  dedupe_window_sec: 60           # Dedupe same symbol+type within 60s

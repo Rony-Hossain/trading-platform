@@ -1,0 +1,150 @@
+##
+# Alternative Data Prometheus Alert Rules
+# Monitors quality, freshness, and availability of alternative data sources
+##
+
+groups:
+  - name: altdata_quality
+    interval: 60s
+    rules:
+      # Data Quality Alerts
+      - alert: AltDataQualityDegraded
+        expr: altdata_quality_score < 0.90
+        for: 10m
+        labels:
+          severity: warning
+          component: altdata
+        annotations:
+          summary: "Alternative data quality degraded for {{ $labels.source }}"
+          description: "Quality score for {{ $labels.source }} is {{ $value | humanizePercentage }}, below 90% threshold"
+          runbook: "Check data source logs and investigate quality issues"
+
+      - alert: AltDataQualityCritical
+        expr: altdata_quality_score < 0.80
+        for: 5m
+        labels:
+          severity: critical
+          component: altdata
+        annotations:
+          summary: "Alternative data quality critical for {{ $labels.source }}"
+          description: "Quality score for {{ $labels.source }} is {{ $value | humanizePercentage }}, below 80% threshold"
+          runbook: "Immediate investigation required. May need to disable source."
+
+  - name: altdata_freshness
+    interval: 60s
+    rules:
+      # Data Freshness Alerts
+      - alert: AltDataStale
+        expr: (time() - altdata_last_fetch_timestamp) > 86400
+        for: 30m
+        labels:
+          severity: warning
+          component: altdata
+        annotations:
+          summary: "Alternative data stale for {{ $labels.source }}"
+          description: "No fresh data from {{ $labels.source }} for >24 hours"
+          runbook: "Check data source availability and fetch schedules"
+
+      - alert: AltDataStaleCritical
+        expr: (time() - altdata_last_fetch_timestamp) > 172800
+        for: 1h
+        labels:
+          severity: critical
+          component: altdata
+        annotations:
+          summary: "Alternative data critically stale for {{ $labels.source }}"
+          description: "No fresh data from {{ $labels.source }} for >48 hours"
+          runbook: "Investigate source outage. Consider failover or disabling."
+
+  - name: altdata_availability
+    interval: 30s
+    rules:
+      # Source Availability Alerts
+      - alert: AltDataSourceDown
+        expr: altdata_fetch_total{status="error"} / (altdata_fetch_total{status="success"} + altdata_fetch_total{status="error"}) > 0.20
+        for: 5m
+        labels:
+          severity: warning
+          component: altdata
+        annotations:
+          summary: "Alternative data source {{ $labels.source }} error rate high"
+          description: "Error rate for {{ $labels.source }} is >20% over last 5 minutes"
+          runbook: "Check API status, rate limits, and authentication"
+
+      - alert: AltDataSourceCritical
+        expr: altdata_fetch_total{status="error"} / (altdata_fetch_total{status="success"} + altdata_fetch_total{status="error"}) > 0.50
+        for: 2m
+        labels:
+          severity: critical
+          component: altdata
+        annotations:
+          summary: "Alternative data source {{ $labels.source }} mostly failing"
+          description: "Error rate for {{ $labels.source }} is >50%"
+          runbook: "Source is down or experiencing major issues. Disable if necessary."
+
+  - name: altdata_latency
+    interval: 60s
+    rules:
+      # Latency Alerts
+      - alert: AltDataHighLatency
+        expr: histogram_quantile(0.95, rate(altdata_fetch_latency_seconds_bucket[5m])) > 10
+        for: 10m
+        labels:
+          severity: warning
+          component: altdata
+        annotations:
+          summary: "High latency for alternative data source {{ $labels.source }}"
+          description: "P95 latency for {{ $labels.source }} is {{ $value }}s (>10s threshold)"
+          runbook: "Investigate API performance or network issues"
+
+      - alert: AltDataVeryHighLatency
+        expr: histogram_quantile(0.95, rate(altdata_fetch_latency_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: critical
+          component: altdata
+        annotations:
+          summary: "Very high latency for alternative data source {{ $labels.source }}"
+          description: "P95 latency for {{ $labels.source }} is {{ $value }}s (>30s threshold)"
+          runbook: "Severe performance degradation. Consider circuit breaker."
+
+  - name: altdata_cost
+    interval: 300s
+    rules:
+      # Cost Tracking Alerts (if cost tracking is enabled)
+      - alert: AltDataCostThresholdExceeded
+        expr: altdata_monthly_cost_estimate > 500
+        for: 1h
+        labels:
+          severity: warning
+          component: altdata
+        annotations:
+          summary: "Alternative data cost exceeding budget for {{ $labels.source }}"
+          description: "Estimated monthly cost for {{ $labels.source }} is ${{ $value }}, exceeding $500 threshold"
+          runbook: "Review usage patterns and ROI. Consider rate limiting."
+
+  - name: altdata_roi
+    interval: 3600s
+    rules:
+      # ROI Alerts (requires ROI metrics to be exposed)
+      - alert: AltDataNegativeROI
+        expr: altdata_roi_percent < 0
+        for: 7d
+        labels:
+          severity: warning
+          component: altdata
+        annotations:
+          summary: "Negative ROI for alternative data source {{ $labels.source }}"
+          description: "ROI for {{ $labels.source }} has been negative for 7 days"
+          runbook: "Evaluate source value. Consider cancellation per onboarding checklist."
+
+      - alert: AltDataLowValue
+        expr: altdata_sharpe_uplift < 0.05
+        for: 30d
+        labels:
+          severity: info
+          component: altdata
+        annotations:
+          summary: "Low Sharpe uplift from {{ $labels.source }}"
+          description: "Sharpe uplift from {{ $labels.source }} is only {{ $value }}"
+          runbook: "Quarterly review recommended. Evaluate against cost."

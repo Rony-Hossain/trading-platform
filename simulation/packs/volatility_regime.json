@@ -1,0 +1,21 @@
+{
+  "name": "High Volatility Regime",
+  "description": "VIX > 40 sustained period",
+  "scenario_id": "high_vix_regime",
+  "market_conditions": {
+    "vix_level": 45.0,
+    "duration_days": 30,
+    "sector_correlations": 0.9,
+    "avg_daily_range_pct": 0.05,
+    "gap_frequency": 0.3
+  },
+  "expected_behavior": {
+    "position_sizing_reduced": true,
+    "risk_limits_adjusted": true,
+    "alpha_degradation_acceptable": 0.2,
+    "sharpe_ratio_minimum": 0.5,
+    "max_drawdown": 0.15
+  },
+  "severity": "HIGH",
+  "tags": ["high_volatility", "vix_spike", "correlation_breakdown"]
+}

@@ -1,0 +1,108 @@
+# Redis Streams Configuration for Trading Platform
+# Low-latency streaming for features, signals, and market data
+
+# Backend selection
+stream_backend: redis_streams  # Options: redis_streams, kafka
+
+# Redis connection
+redis:
+  url: redis://localhost:6379/0
+  max_connections: 50
+  socket_timeout: 5
+  socket_connect_timeout: 5
+  retry_on_timeout: true
+  health_check_interval: 30
+
+# Stream definitions
+streams:
+  # Feature streams
+  features_raw:
+    name: "features.raw"
+    maxlen: 10000
+    approximate: true
+    consumer_group: "feature_processor"
+
+  features_pit:
+    name: "features.pit"
+    maxlen: 10000
+    approximate: true
+    consumer_group: "trading_service"
+
+  # Signal streams (per strategy)
+  signals:
+    name_template: "signals.{strategy}"
+    maxlen: 5000
+    approximate: true
+    consumer_group: "execution_service"
+
+  # Order and execution streams
+  orders:
+    name: "orders"
+    maxlen: 50000
+    approximate: false  # Strict - no data loss
+    consumer_group: "order_manager"
+
+  fills:
+    name: "fills"
+    maxlen: 50000
+    approximate: false  # Strict - no data loss
+    consumer_group: "pnl_service"
+
+  # Market data streams
+  market_data_l1:
+    name: "market_data.l1"
+    maxlen: 100000
+    approximate: true
+    consumer_group: "market_data_consumer"
+
+  market_data_trades:
+    name: "market_data.trades"
+    maxlen: 100000
+    approximate: true
+    consumer_group: "trade_consumer"
+
+# Producer configuration
+producer:
+  max_retries: 3
+  retry_delay_ms: 100
+  batch_size: 100
+  max_batch_delay_ms: 10
+  compression: null  # Redis doesn't natively support compression
+  acks: all  # Ensure write confirmation
+
+# Consumer configuration
+consumer:
+  group_name: "trading_service"
+  consumer_name_prefix: "consumer"
+  block_ms: 1000  # Block for 1 second waiting for messages
+  count: 10  # Read up to 10 messages at once
+  claim_idle_time_ms: 60000  # Claim messages idle for 60s
+  max_processing_time_ms: 5000  # Max time to process before considering stuck
+  auto_ack: false  # Manual acknowledgment for reliability
+
+# Performance settings
+performance:
+  stream_max_lag_ms: 200  # Max acceptable lag
+  target_p99_latency_ms: 50  # Target p99 latency
+  monitoring_interval_s: 10  # How often to emit metrics
+
+# Monitoring
+monitoring:
+  enabled: true
+  prometheus_enabled: true
+  log_level: INFO
+  metrics:
+    - stream_lag_ms
+    - messages_per_second
+    - consumer_group_pending
+    - processing_time_ms
+    - error_rate
+
+# Alerting thresholds
+alerts:
+  stream_lag_critical_ms: 1000
+  stream_lag_warning_ms: 500
+  consumer_lag_critical: 1000
+  consumer_lag_warning: 500
+  error_rate_critical: 0.05  # 5% error rate
+  error_rate_warning: 0.01   # 1% error rate

@@ -195,3 +195,64 @@ Event Data Service upgrade:
 - Added calendar/headline ingestors with configurable providers/env vars; events and headlines persist in TimescaleDB with dedupe + linking.
 - Documented provider requirements/rate limits (services/event-data-service/README.md), updated .env.example with calendar/headline credentials.
 
+
+# Make sure you're in the project directory
+cd e:\rony-data\trading-platform
+
+# Create migrations tracking table
+docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "CREATE TABLE IF NOT EXISTS schema_migrations (id SERIAL PRIMARY KEY, filename VARCHAR(255) UNIQUE NOT NULL, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
+
+# Migration 001
+Get-Content migrations/001_initial_schema.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('001_initial_schema.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 002
+Get-Content migrations/002_intraday_alerts.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('002_intraday_alerts.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 003
+Get-Content migrations/003_timescaledb_optimization.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('003_timescaledb_optimization.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 004
+Get-Content migrations/004_sentiment_tables.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('004_sentiment_tables.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 005
+Get-Content migrations/005_fundamentals_earnings_tables.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('005_fundamentals_earnings_tables.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 006
+Get-Content migrations/006_macro_factors.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('006_macro_factors.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 007
+Get-Content migrations/007_options_metrics.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('007_options_metrics.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 008
+Get-Content migrations/008_event_data_service.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('008_event_data_service.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 009
+Get-Content migrations/009_fundamentals_enhancements.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('009_fundamentals_enhancements.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 010a
+Get-Content migrations/010_fundamentals_first_print.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('010_fundamentals_first_print.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 010b
+Get-Content migrations/010_novelty_credibility_enhancements.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('010_novelty_credibility_enhancements.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 010c
+Get-Content migrations/010_pit_enforcement_tables.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('010_pit_enforcement_tables.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 010d
+Get-Content migrations/010_skew_monitoring.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('010_skew_monitoring.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 011a
+Get-Content migrations/011_fundamentals_training_view.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('011_fundamentals_training_view.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 011b
+Get-Content migrations/011_fundamentals_versioning.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('011_fundamentals_versioning.sql') ON CONFLICT DO NOTHING;"
+
+# Migration 012
+Get-Content migrations/012_fundamentals_training_views.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('012_fundamentals_training_views.sql') ON CONFLICT DO NOTHING;"
+
+# Verify migrations
+docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "SELECT filename, applied_at FROM schema_migrations ORDER BY applied_at;"
+
+Write-Host "All migrations completed!"
+
+Get-Content migrations/010_fundamentals_first_print.sql -Raw | docker exec -i trading-platform-postgres-1 psql -U trading_user -d trading_db docker exec trading-platform-postgres-1 psql -U trading_user -d trading_db -c "INSERT INTO schema_migrations (filename) VALUES ('010_fundamentals_first_print.sql') ON CONFLICT DO NOTHING;"

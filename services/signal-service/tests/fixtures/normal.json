@@ -1,0 +1,108 @@
+{
+  "scenario": "normal",
+  "description": "Normal market conditions with moderate volatility",
+  "inference_response": {
+    "predictions": [
+      {
+        "symbol": "AAPL",
+        "action": "BUY",
+        "confidence": 0.75,
+        "expected_return": 0.018,
+        "risk_score": 0.35,
+        "model_version": "v1.2.3"
+      },
+      {
+        "symbol": "MSFT",
+        "action": "HOLD",
+        "confidence": 0.65,
+        "expected_return": 0.005,
+        "risk_score": 0.25,
+        "model_version": "v1.2.3"
+      }
+    ],
+    "model_metadata": {
+      "version": "v1.2.3",
+      "trained_at": "2024-01-15T10:00:00Z"
+    }
+  },
+  "forecast_response": {
+    "forecasts": [
+      {
+        "symbol": "AAPL",
+        "current_price": 175.50,
+        "predictions": {
+          "1d": {"price": 176.20, "confidence": 0.75},
+          "5d": {"price": 178.00, "confidence": 0.60}
+        },
+        "technicals": {
+          "rsi": 58.5,
+          "macd": {"value": 1.1, "signal": 0.9, "histogram": 0.2},
+          "support": 172.00,
+          "resistance": 180.00,
+          "trend": "bullish",
+          "indicators": {
+            "moving_averages": {
+              "sma_20": 174.5,
+              "sma_50": 172.0,
+              "ema_12": 175.2
+            }
+          }
+        },
+        "sector": "TECH",
+        "volatility": 0.02,
+        "avg_daily_volume": 75000000
+      }
+    ],
+    "timestamp": "2024-01-20T15:30:00Z"
+  },
+  "sentiment_response": {
+    "sentiments": [
+      {
+        "symbol": "AAPL",
+        "overall_score": 0.55,
+        "classification": "positive",
+        "confidence": 0.75,
+        "sources": {
+          "news": {"score": 0.60, "article_count": 45},
+          "social": {"score": 0.50, "mention_count": 1200},
+          "analyst": {"score": 0.65, "rating_count": 12}
+        },
+        "trending": false,
+        "momentum": "stable"
+      }
+    ],
+    "market_sentiment": {
+      "overall": "neutral",
+      "fear_greed_index": 52
+    },
+    "timestamp": "2024-01-20T15:30:00Z"
+  },
+  "portfolio_response": {
+    "user_id": "user123",
+    "total_value": 50000.00,
+    "cash": 10000.00,
+    "buying_power": 15000.00,
+    "positions_value": 40000.00,
+    "daily_pnl": 250.00,
+    "daily_pnl_pct": 0.5,
+    "daily_trades": 1,
+    "risk_level": "moderate",
+    "diversification_score": 0.75,
+    "sector_allocations": {
+      "TECH": 0.25,
+      "FINANCE": 0.20,
+      "HEALTHCARE": 0.15
+    },
+    "positions": [
+      {
+        "symbol": "GOOGL",
+        "shares": 50,
+        "avg_cost": 140.00,
+        "current_price": 145.00,
+        "market_value": 7250.00,
+        "unrealized_pnl": 250.00,
+        "unrealized_pnl_pct": 3.57
+      }
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "Correlation Breakdown",
+  "description": "Normal correlations break down during crisis",
+  "scenario_id": "correlation_breakdown",
+  "market_conditions": {
+    "initial_correlation": 0.3,
+    "crisis_correlation": 0.95,
+    "transition_days": 5,
+    "duration_days": 20,
+    "volatility_multiplier": 2.5
+  },
+  "expected_behavior": {
+    "diversification_benefit_lost": true,
+    "portfolio_concentration_increased": true,
+    "max_drawdown": 0.12,
+    "position_rebalancing_triggered": true,
+    "hedge_effectiveness_degraded": true
+  },
+  "severity": "HIGH",
+  "tags": ["correlation", "crisis", "diversification"]
+}

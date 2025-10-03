@@ -1,0 +1,83 @@
+{
+  "scenario": "volatile_earnings",
+  "description": "High volatility during earnings period",
+  "inference_response": {
+    "predictions": [
+      {
+        "symbol": "TSLA",
+        "action": "AVOID",
+        "confidence": 0.45,
+        "expected_return": -0.005,
+        "risk_score": 0.85,
+        "model_version": "v1.2.3"
+      }
+    ],
+    "model_metadata": {
+      "version": "v1.2.3",
+      "trained_at": "2024-01-15T10:00:00Z"
+    }
+  },
+  "forecast_response": {
+    "forecasts": [
+      {
+        "symbol": "TSLA",
+        "current_price": 245.00,
+        "predictions": {
+          "1d": {"price": 240.00, "confidence": 0.40}
+        },
+        "technicals": {
+          "rsi": 75.5,
+          "macd": {"value": -0.5, "signal": 1.2, "histogram": -1.7},
+          "support": 220.00,
+          "resistance": 260.00,
+          "trend": "neutral",
+          "indicators": {
+            "moving_averages": {
+              "sma_20": 250.0,
+              "sma_50": 240.0
+            }
+          }
+        },
+        "sector": "AUTO",
+        "volatility": 0.08,
+        "avg_daily_volume": 150000000
+      }
+    ],
+    "timestamp": "2024-01-20T15:30:00Z"
+  },
+  "sentiment_response": {
+    "sentiments": [
+      {
+        "symbol": "TSLA",
+        "overall_score": 0.0,
+        "classification": "neutral",
+        "confidence": 0.60,
+        "sources": {
+          "news": {"score": 0.10, "article_count": 120},
+          "social": {"score": -0.10, "mention_count": 5000},
+          "analyst": {"score": 0.05, "rating_count": 25}
+        },
+        "trending": true,
+        "momentum": "volatile"
+      }
+    ],
+    "market_sentiment": {
+      "overall": "cautious",
+      "fear_greed_index": 35
+    },
+    "timestamp": "2024-01-20T15:30:00Z"
+  },
+  "portfolio_response": {
+    "user_id": "user123",
+    "total_value": 50000.00,
+    "cash": 15000.00,
+    "buying_power": 20000.00,
+    "daily_trades": 0,
+    "daily_pnl_pct": -1.2,
+    "sector_allocations": {
+      "AUTO": 0.05,
+      "TECH": 0.40
+    },
+    "positions": []
+  }
+}

@@ -1,0 +1,249 @@
+# Venue Profiles Configuration
+# Trading venue characteristics for smart order routing
+
+venues:
+  # NASDAQ
+  - name: NASDAQ
+    venue_id: XNAS
+    latency_p50_ms: 12
+    latency_p99_ms: 45
+    maker_fee_bps: 0.3
+    taker_fee_bps: 0.9
+    min_tick_size: 0.01
+    min_order_size: 1
+    max_order_size: 1000000
+    supports_ioc: true
+    supports_post_only: true
+    supports_fok: true
+    supports_day: true
+    supports_gtc: true
+    market_hours:
+      open: "09:30:00"
+      close: "16:00:00"
+      timezone: "America/New_York"
+    historical_fill_rate: 0.92
+    avg_spread_bps: 2.5
+    liquidity_score: 0.95
+    priority: 1
+
+  # NYSE Arca
+  - name: NYSE_ARCA
+    venue_id: ARCX
+    latency_p50_ms: 18
+    latency_p99_ms: 60
+    maker_fee_bps: 0.2
+    taker_fee_bps: 1.0
+    min_tick_size: 0.01
+    min_order_size: 1
+    max_order_size: 1000000
+    supports_ioc: true
+    supports_post_only: true
+    supports_fok: true
+    supports_day: true
+    supports_gtc: true
+    market_hours:
+      open: "09:30:00"
+      close: "16:00:00"
+      timezone: "America/New_York"
+    historical_fill_rate: 0.89
+    avg_spread_bps: 2.8
+    liquidity_score: 0.90
+    priority: 2
+
+  # IEX (Investors Exchange)
+  - name: IEX
+    venue_id: IEXG
+    latency_p50_ms: 25
+    latency_p99_ms: 80
+    maker_fee_bps: -0.9  # Rebate
+    taker_fee_bps: 0.9
+    min_tick_size: 0.01
+    min_order_size: 1
+    max_order_size: 1000000
+    supports_ioc: true
+    supports_post_only: false
+    supports_fok: true
+    supports_day: true
+    supports_gtc: false
+    market_hours:
+      open: "09:30:00"
+      close: "16:00:00"
+      timezone: "America/New_York"
+    historical_fill_rate: 0.85
+    avg_spread_bps: 3.2
+    liquidity_score: 0.80
+    priority: 3
+    notes: "Speed bump exchange, good for anti-HFT"
+
+  # BATS (Cboe BZX)
+  - name: BATS_BZX
+    venue_id: BATS
+    latency_p50_ms: 15
+    latency_p99_ms: 50
+    maker_fee_bps: 0.2
+    taker_fee_bps: 0.3
+    min_tick_size: 0.01
+    min_order_size: 1
+    max_order_size: 1000000
+    supports_ioc: true
+    supports_post_only: true
+    supports_fok: true
+    supports_day: true
+    supports_gtc: true
+    market_hours:
+      open: "09:30:00"
+      close: "16:00:00"
+      timezone: "America/New_York"
+    historical_fill_rate: 0.88
+    avg_spread_bps: 2.6
+    liquidity_score: 0.88
+    priority: 2
+
+  # NYSE (New York Stock Exchange)
+  - name: NYSE
+    venue_id: XNYS
+    latency_p50_ms: 20
+    latency_p99_ms: 65
+    maker_fee_bps: 0.25
+    taker_fee_bps: 0.30
+    min_tick_size: 0.01
+    min_order_size: 1
+    max_order_size: 1000000
+    supports_ioc: true
+    supports_post_only: true
+    supports_fok: true
+    supports_day: true
+    supports_gtc: true
+    market_hours:
+      open: "09:30:00"
+      close: "16:00:00"
+      timezone: "America/New_York"
+    historical_fill_rate: 0.91
+    avg_spread_bps: 2.4
+    liquidity_score: 0.93
+    priority: 1
+    notes: "Primary listing venue for many large caps"
+
+  # EDGX (Cboe EDGX)
+  - name: EDGX
+    venue_id: EDGX
+    latency_p50_ms: 14
+    latency_p99_ms: 48
+    maker_fee_bps: 0.1
+    taker_fee_bps: 0.3
+    min_tick_size: 0.01
+    min_order_size: 1
+    max_order_size: 1000000
+    supports_ioc: true
+    supports_post_only: true
+    supports_fok: true
+    supports_day: true
+    supports_gtc: true
+    market_hours:
+      open: "09:30:00"
+      close: "16:00:00"
+      timezone: "America/New_York"
+    historical_fill_rate: 0.87
+    avg_spread_bps: 2.7
+    liquidity_score: 0.86
+    priority: 3
+
+# Dark Pools (Optional - Phase 5)
+dark_pools:
+  - name: SIGMA_X
+    venue_id: SGMA
+    latency_p50_ms: 30
+    latency_p99_ms: 100
+    maker_fee_bps: 0.0
+    taker_fee_bps: 0.0
+    min_order_size: 100
+    max_order_size: 100000
+    supports_ioc: false
+    supports_post_only: false
+    historical_fill_rate: 0.65
+    avg_spread_bps: 0.0  # Midpoint execution
+    liquidity_score: 0.70
+    min_order_value: 10000
+    enabled: false
+    notes: "Requires minimum order value"
+
+# Routing Configuration
+routing_config:
+  # Global settings
+  enabled: true
+  latency_budget_ms: 10
+  min_spread_improvement_bps: 0.5
+  enable_ml_routing: false  # Phase 5
+
+  # Venue selection weights
+  weights:
+    spread: 0.40
+    latency: 0.30
+    fees: 0.20
+    fill_probability: 0.10
+
+  # Order size tiers
+  size_tiers:
+    small:
+      max_shares: 100
+      preferred_venues: [NASDAQ, BATS_BZX, EDGX]
+
+    medium:
+      max_shares: 1000
+      preferred_venues: [NASDAQ, NYSE, NYSE_ARCA]
+
+    large:
+      max_shares: 10000
+      preferred_venues: [NYSE, NASDAQ]
+
+    block:
+      min_shares: 10000
+      preferred_venues: [NYSE]
+      # dark_pools: [SIGMA_X]  # Phase 5
+
+  # Symbol-specific overrides
+  symbol_overrides:
+    # Large cap tech - prefer NASDAQ
+    tech_large_cap:
+      symbols: [AAPL, MSFT, GOOGL, AMZN, META, NVDA]
+      preferred_venues: [NASDAQ]
+
+    # NYSE-listed - prefer NYSE
+    nyse_listed:
+      symbols: [JPM, BAC, WFC, GS]
+      preferred_venues: [NYSE, NYSE_ARCA]
+
+  # Time-based routing
+  time_based_routing:
+    # Market open - higher latency tolerance
+    market_open:
+      start: "09:30:00"
+      end: "09:45:00"
+      latency_weight: 0.20
+      spread_weight: 0.50
+
+    # Market close - prioritize fills
+    market_close:
+      start: "15:45:00"
+      end: "16:00:00"
+      latency_weight: 0.40
+      fill_probability_weight: 0.30
+
+    # Normal hours
+    normal:
+      start: "09:45:00"
+      end: "15:45:00"
+      # Use default weights
+
+  # Failover configuration
+  failover:
+    enabled: true
+    max_retries: 3
+    retry_delay_ms: 100
+    fallback_venues: [NASDAQ, NYSE]
+
+  # Shadow mode for testing
+  shadow_mode:
+    enabled: false
+    comparison_window_days: 30
+    log_all_decisions: true

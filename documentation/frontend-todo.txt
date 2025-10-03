@@ -1,0 +1,116 @@
+# Frontend Delivery Checklist (Beginner to Expert Trading Frontend)
+Last updated: 2025-10-03
+
+## Phase 0 - Foundations (Week 0-1) ??? COMPLETE
+- [x] Confirm IA nav structure (/today, /portfolio, /alerts, /explore, /settings, /learn) aligns with plan API responses. Verified: `/plan`, `/positions`, `/alerts` endpoints ready.
+- [x] Freeze design tokens (color, type scale, spacing, radii, motion) with WCAG 2.2 AA validation. See `documentation/design-tokens.md`.
+- [x] Lock domain types and integration contracts after mapping to `services/signal-service/app/core/contracts.py`. See `trading-frontend/lib/types/contracts.ts`.
+- [x] Publish CopyService key map (beginner plain language, expert math variants). See `trading-frontend/apps/trading-web/lib/copy/copy-service.ts`.
+- [x] Draft telemetry taxonomy (plan_viewed, mode_switched, alert_clicked, paper_order_placed, setting_changed, tooltip_opened). See `trading-frontend/apps/trading-web/lib/telemetry/taxonomy.ts`.
+- [x] Define compliance guardrails by region and mode (beginner feature gating, leverage/options visibility, disclaimers). See `trading-frontend/apps/trading-web/lib/compliance/guardrails.ts`.
+- [x] Establish error/state vocabulary (loading, empty, slow, stale, rate-limited, offline) and banner patterns. See `trading-frontend/apps/trading-web/lib/states/vocabulary.ts`.
+- [x] Set performance budgets per route (LCP/INP/TTFB targets) and bundle-size budgets with enforcement. See `trading-frontend/apps/trading-web/lib/performance/budgets.ts`.
+- [x] Choose state tools (TanStack Query plus UI store) and document caching/staleness policies. See `documentation/state-management-policy.md`.
+- [x] Define accessibility targets (keyboard paths, live regions, color-blind palettes, reduced motion defaults). See `documentation/accessibility-targets.md`.
+- [x] Select observability stack (client crash reporting, RUM, log sampling) and privacy filters. See `documentation/observability-stack.md`.
+- [x] Define news contracts: NewsItem (id, symbols, headline, summary, source, url, publishedAt, sentiment, importance, eventType) and NewsFeedParams (symbols, lookbackHours, maxItems, sources, language). See `trading-frontend/apps/trading-web/lib/types/contracts.ts`.
+- [x] Document news sourcing policy (provider allowlist, rate-limit/TTL cache rules, attribution requirements, fallback behavior). See `documentation/news-integration-policy.md`.
+- [x] Write modularization charter (module boundaries, ownership, extension points) covering site configuration, multi-tenant packaging, and selective deployment. See `documentation/modularization-charter.md`.
+- [x] Decide on module registry and dependency-injection plan (plugin manifest plus DI for runtime/build-time enablement). Implemented in `trading-frontend/apps/trading-web/lib/module-registry/`.
+
+## Phase 1 - Beginner MVP (Weeks 1-2) ??? COMPLETE
+- [x] Scaffold shell components (AppLayout, MainNav, GlobalToasts, RouteProgressBar). See `components/layout/`.
+- [x] Implement Settings flow (ModeToggle, RiskAppetiteSelector, LossCapPercentInput, AlertsStyleSelector, PrivacyConsentSection, ResetToDefaultsButton). See `components/settings/`.
+- [x] Build Today stack (PlanList, PlanCard, PlanHeader, PlanAction, PlanSafety, PlanReason, PlanBudget, PlanConfidencePill, PlanBadges, ExplainChip, ExplainPopover). See `components/today/`.
+- [x] Wire TanStack Query hooks (usePlanQuery, useExplainEntry). See `lib/hooks/`.
+- [x] Ensure CopyService usage for all UI strings and verify screen-reader labels/focus order. Integrated throughout.
+- [x] Measure time-to-first-plan (<5 s) and capture in telemetry. See `components/today/PlanList.tsx:22-41` (performance.now tracking with <5s target).
+- [x] Enforce beginner defaults server-side (stop-loss on, daily loss cap on, paper trading on) and display UI badges. See `lib/api/defaults.ts`, `lib/hooks/useBeginnerDefaults.ts`, `components/badges/EnforcementBadge.tsx`, `app/today/page.tsx:29-39`.
+- [x] Add content length guards (reason text clamp, glossary entry limits) with overflow handling. See PlanReason component.
+- [x] Add stale-data banner when plan timestamp exceeds threshold and provide manual refresh. See PlanList component.
+- [x] Package Beginner Today as `@modules/today` with routes, translations, and feature flags. See `modules/today/module.config.ts`, `modules/today/index.ts`, `modules/today/package.json`, `modules/today/README.md`.
+- [x] Prove site-configuration read path (mode/risk defaults from environment or remote JSON). See `lib/config/site-config.ts`, `lib/hooks/useSiteConfig.ts`, `.env.local.example`, `public/config.example.json`, `app/config-test/page.tsx`.
+
+## Phase 2 - Alerts System (Week 3)
+- [x] Implement Alerts UI (AlertsBell, AlertsDrawer, AlertTriggerItem, AlertRuleRow, QuietHoursToggle, MuteAllSwitch, AlertEmptyState).
+- [x] Add hooks and stores (useAlertsQuery, useAlertStream, useAlertsUiStore with cooldown and dedupe handling).
+- [x] Surface quiet hours and mute states; confirm aria-live "polite" announcements.
+- [x] Ship snooze and one-tap action flows; log alert CTR and helpfulness metrics.
+- [x] Implement adaptive alert frequency (auto-throttle when "not helpful" feedback exceeds threshold).
+- [x] Add delivery channel preferences (in-app, push, email/SMS placeholders) and quiet-hours schedule UI.
+- [x] Package Alerts as `@modules/alerts` with configurable channels via site configuration (toggle SMS/email per tenant).
+
+## Phase 3 - Portfolio & Journal (Weeks 4-5)
+- [ ] Deliver Portfolio views (PortfolioSummary, PortfolioList, PortfolioRow, PositionDetailPanel).
+- [ ] Implement dialogs (AdjustSafetyDialog, SellConfirmDialog, SetTargetDialog) with paper-trade integrations.
+- [ ] Stand up Journal UI (JournalPage, JournalEntryCard, filters, tags) and auto-ingest trade events.
+- [ ] Track navigation flows: alerts to portfolio, journal coverage percentage, paper versus live clarity.
+- [ ] Add cost basis, dividends, and realized/unrealized split in PortfolioSummary for investment view.
+- [ ] Provide export (CSV) for journal and portfolio with timezone-correct timestamps.
+- [ ] Add audit-log immutability note in UI for journal entries (edits append notes only).
+- [ ] Package Portfolio and Journal as `@modules/portfolio` and `@modules/journal` with telemetry namespaces and site-config toggles.
+
+## Phase 4 - Expert Surfaces (Weeks 6-7)
+- [ ] Add Expert module toggles in Settings (Indicators, Options, Diagnostics).
+- [ ] Lazy-load Expert panels (ExpertPanelIndicators, ExpertPanelOptions, ExpertPanelDiagnostics).
+- [ ] Ship Indicator and Chart settings panels with template persistence and multi-chart layout.
+- [ ] Release Glossary and Explore surfaces powered by ExplainService.search.
+- [ ] Support "indicator on indicator" validation (range checks, dependency hints, sample presets).
+- [ ] Add diagnostics chips (model confidence, drift light, top drivers preview) with progressive disclosure.
+- [ ] Persist per-user templates (indicator set, chart layout) with import/export.
+- [ ] Package Expert features as `@modules/indicators`, `@modules/options`, `@modules/diagnostics`, enableable via site configuration per tenant.
+- [ ] Implement site-config theming (tenant-level theme tokens and module visibility rules, e.g., hide Options by jurisdiction).
+
+## Phase 5 - Rules Engine & Advanced Alerts (Week 8)
+- [ ] Build RuleBuilder (IF/AND/OR UI), RuleLibrary, RulePreview with backend contract definition.
+- [ ] Extend AlertsService with create, update, delete, and preview endpoints (coordinate with backend owners).
+- [ ] Capture rule-build duration and helpfulness telemetry; document presets for onboarding.
+- [ ] Add rule validation and conflict detection (duplicate conditions, impossible thresholds).
+- [ ] Provide rule templates (common strategies) and inline explainers for each condition.
+- [ ] Package Rules as `@modules/rules` with pluggable condition providers (indicators, news, options) discoverable via module registry and site configuration.
+
+## Phase 6 - ML Insights & Regime Hinting (Week 9)
+- [ ] Integrate drivers and regime data in PlanCard (Why Now panel, DiagnosticsSummary chip, RegimeBanner).
+- [ ] Map driver codes to CopyService entries and cap display to top three.
+- [ ] Collect feedback on insight panels (helpful versus confusing signals).
+- [ ] Display confidence stability over time (last N minutes) with simplified labels in Beginner mode.
+- [ ] Tone down recommendations automatically in high-volatility regimes (copy plus badge updates).
+- [ ] Package ML insight surfaces as `@modules/ml-insights` gated by site configuration to allow tenant opt-out.
+
+## Phase 7 - Learn Hub & Micro-Lessons (Week 10)
+- [ ] Launch LearnHub (lesson catalog, glossary search, contextual entry points).
+- [ ] Instrument lesson completion and retention metrics.
+- [ ] Ensure tooltips and micro-lessons share a single content source.
+- [ ] Add "continue where you left off" and recommended next lesson based on activity.
+- [ ] Version glossary entries with `lastReviewed` and display freshness date.
+- [ ] Package Education as `@modules/learn` with content packs selectable per site configuration (beginner-only versus full library).
+
+## Phase 8 - Hardening (Week 11)
+- [ ] Hit performance budgets (LCP <2.5 s, realtime throttling, bundle-split expert modules and charts).
+- [ ] Complete keyboard journey tests (alerts, sell, adjust safety, rule builder) plus axe scans.
+- [ ] Externalize strings, run pseudo-locale QA, ensure locale-aware number and date formatting.
+- [ ] Add stale-data, rate-limit, and offline banners with retry guidance.
+- [ ] Implement realtime backpressure policy (max points, update throttle, drop-old strategy) and document it.
+- [ ] Add CSP, SRI for assets, and dependency-license audit summary in release notes.
+- [ ] Support per-tenant build profiles (tree-shake disabled modules) and verify route guards when modules are off.
+
+## Phase 9 - Launch & Iteration (Week 12)
+- [ ] Configure feature-flag rollout and rollback levers; prepare "What's new" modal.
+- [ ] Embed in-app feedback ("Was this helpful?") on alerts and driver chips.
+- [ ] Monitor launch KPIs (beginner activation %, alert follow-through, median alert P&L, helpfulness %, loss-cap saves) and schedule week-one review.
+- [ ] Run canary cohort versus control, define stop rules, and test rollback playbook.
+- [ ] Start A/B tests (alert tone, detail depth, drivers visibility) with success metrics.
+- [ ] Build site-configuration control panel (admin-only view of active modules, flags, tenant overrides at runtime).
+
+## Cross-Cutting Practices
+- [ ] Keep CopyService, telemetry schema, and compliance guardrails documented per component.
+- [ ] Maintain state-matrix docs (loading, empty, error, slow, realtime) for each surface.
+- [ ] Review backend alignment after each phase and raise contract deltas through change control.
+- [ ] Add contract tests (schema validation or pact) for critical endpoints and streaming payloads.
+- [ ] Ensure privacy and PII handling (redaction, consent gating, data-retention notes in UI).
+- [ ] Capture owners per KPI and create dashboards before feature release.
+- [ ] Include device-sync checks (settings/templates persist across devices) and session restore.
+- [ ] Handle attribution and licensing (provider logos, source links, excerpt limits, provider-specific terms of service flags).
+- [ ] Support personalization (per-user news filters for sources, topics, language with "hide this source" quick action).
+- [ ] Define module quality gates (Definition of Done, docs, tests, accessibility, i18n, telemetry), semantic versioning, and upgrade notes.
+- [ ] Publish site-configuration spec (single JSON or remote source controlling modules, flags, themes, data-provider keys, compliance rules) with safe hot-reload.

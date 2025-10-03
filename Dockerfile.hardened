@@ -1,0 +1,73 @@
+# Hardened Multi-Stage Dockerfile
+#
+# Security Features:
+# - Multi-stage build (minimal final image)
+# - Distroless base (no shell, minimal attack surface)
+# - Non-root user
+# - Minimal dependencies
+# - Security scanning friendly
+# - Signed with Cosign
+
+# ========================================
+# Stage 1: Builder
+# ========================================
+FROM python:3.11-slim AS builder
+
+# Security: Run as non-root even in builder
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        gcc \
+        g++ \
+        libpq-dev \
+        && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements
+COPY requirements.txt .
+
+# Install Python dependencies to user directory
+RUN pip install --user --no-cache-dir --no-warn-script-location \
+    -r requirements.txt
+
+# ========================================
+# Stage 2: Runtime (Distroless)
+# ========================================
+FROM gcr.io/distroless/python3-debian11
+
+# Metadata
+LABEL maintainer="trading-platform@example.com"
+LABEL version="1.0.0"
+LABEL description="Hardened trading platform service"
+LABEL org.opencontainers.image.source="https://github.com/example/trading-platform"
+LABEL org.opencontainers.image.licenses="MIT"
+
+# Copy Python packages from builder
+COPY --from=builder /root/.local /root/.local
+
+# Copy application code
+COPY --chown=nonroot:nonroot app /app
+
+# Set working directory
+WORKDIR /app
+
+# Update PATH to include user-installed packages
+ENV PATH=/root/.local/bin:$PATH
+
+# Security: Run as non-root user (distroless provides nonroot user)
+USER nonroot:nonroot
+
+# Health check (note: distroless doesn't have curl/wget)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD ["python", "-c", "import http.client; conn = http.client.HTTPConnection('localhost', 8000); conn.request('GET', '/health'); r = conn.getresponse(); exit(0 if r.status == 200 else 1)"]
+
+# Expose port
+EXPOSE 8000
+
+# Entry point
+ENTRYPOINT ["python", "-m", "uvicorn"]
+CMD ["main:app", "--host", "0.0.0.0", "--port", "8000"]

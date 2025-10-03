@@ -1,0 +1,22 @@
+{
+  "name": "Flash Crash 2010",
+  "description": "Simulate May 6, 2010 flash crash",
+  "scenario_id": "flash_crash_2010",
+  "market_conditions": {
+    "initial_price": 100.0,
+    "drop_magnitude": 0.09,
+    "drop_duration_minutes": 5,
+    "recovery_duration_minutes": 20,
+    "volume_multiplier": 5.0,
+    "spread_multiplier": 3.0
+  },
+  "expected_behavior": {
+    "max_drawdown": 0.05,
+    "circuit_breaker_triggers": true,
+    "positions_flattened": true,
+    "recovery_time_minutes": 60,
+    "risk_limits_breached": false
+  },
+  "severity": "CRITICAL",
+  "tags": ["flash_crash", "circuit_breaker", "extreme_volatility"]
+}

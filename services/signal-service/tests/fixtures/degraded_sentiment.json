@@ -1,0 +1,61 @@
+{
+  "scenario": "degraded_sentiment",
+  "description": "Sentiment service is down, test graceful degradation",
+  "inference_response": {
+    "predictions": [
+      {
+        "symbol": "AMZN",
+        "action": "BUY",
+        "confidence": 0.70,
+        "expected_return": 0.025,
+        "risk_score": 0.40,
+        "model_version": "v1.2.3"
+      }
+    ],
+    "model_metadata": {
+      "version": "v1.2.3",
+      "trained_at": "2024-01-15T10:00:00Z"
+    }
+  },
+  "forecast_response": {
+    "forecasts": [
+      {
+        "symbol": "AMZN",
+        "current_price": 155.00,
+        "predictions": {
+          "1d": {"price": 158.00, "confidence": 0.70}
+        },
+        "technicals": {
+          "rsi": 52.0,
+          "macd": {"value": 0.8, "signal": 0.5, "histogram": 0.3},
+          "support": 150.00,
+          "resistance": 160.00,
+          "trend": "bullish"
+        },
+        "sector": "RETAIL",
+        "volatility": 0.025,
+        "avg_daily_volume": 60000000
+      }
+    ],
+    "timestamp": "2024-01-20T15:30:00Z"
+  },
+  "sentiment_response": null,
+  "sentiment_error": {
+    "error": "SERVICE_UNAVAILABLE",
+    "message": "Sentiment service is temporarily unavailable"
+  },
+  "portfolio_response": {
+    "user_id": "user123",
+    "total_value": 50000.00,
+    "cash": 12000.00,
+    "buying_power": 18000.00,
+    "daily_trades": 1,
+    "daily_pnl_pct": 0.3,
+    "sector_allocations": {
+      "TECH": 0.30,
+      "RETAIL": 0.10
+    },
+    "positions": []
+  },
+  "expected_degraded_fields": ["sentiment"]
+}
