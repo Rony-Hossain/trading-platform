@@ -1,7 +1,7 @@
 # Frontend Delivery Checklist (Beginner to Expert Trading Frontend)
 Last updated: 2025-10-03
 
-## Phase 0 - Foundations (Week 0-1) ??? COMPLETE
+## Phase 0 - Foundations (Week 0-1) ✓ COMPLETE
 - [x] Confirm IA nav structure (/today, /portfolio, /alerts, /explore, /settings, /learn) aligns with plan API responses. Verified: `/plan`, `/positions`, `/alerts` endpoints ready.
 - [x] Freeze design tokens (color, type scale, spacing, radii, motion) with WCAG 2.2 AA validation. See `documentation/design-tokens.md`.
 - [x] Lock domain types and integration contracts after mapping to `services/signal-service/app/core/contracts.py`. See `trading-frontend/lib/types/contracts.ts`.
@@ -18,7 +18,7 @@ Last updated: 2025-10-03
 - [x] Write modularization charter (module boundaries, ownership, extension points) covering site configuration, multi-tenant packaging, and selective deployment. See `documentation/modularization-charter.md`.
 - [x] Decide on module registry and dependency-injection plan (plugin manifest plus DI for runtime/build-time enablement). Implemented in `trading-frontend/apps/trading-web/lib/module-registry/`.
 
-## Phase 1 - Beginner MVP (Weeks 1-2) ??? COMPLETE
+## Phase 1 - Beginner MVP (Weeks 1-2) ✓ COMPLETE
 - [x] Scaffold shell components (AppLayout, MainNav, GlobalToasts, RouteProgressBar). See `components/layout/`.
 - [x] Implement Settings flow (ModeToggle, RiskAppetiteSelector, LossCapPercentInput, AlertsStyleSelector, PrivacyConsentSection, ResetToDefaultsButton). See `components/settings/`.
 - [x] Build Today stack (PlanList, PlanCard, PlanHeader, PlanAction, PlanSafety, PlanReason, PlanBudget, PlanConfidencePill, PlanBadges, ExplainChip, ExplainPopover). See `components/today/`.
@@ -31,7 +31,7 @@ Last updated: 2025-10-03
 - [x] Package Beginner Today as `@modules/today` with routes, translations, and feature flags. See `modules/today/module.config.ts`, `modules/today/index.ts`, `modules/today/package.json`, `modules/today/README.md`.
 - [x] Prove site-configuration read path (mode/risk defaults from environment or remote JSON). See `lib/config/site-config.ts`, `lib/hooks/useSiteConfig.ts`, `.env.local.example`, `public/config.example.json`, `app/config-test/page.tsx`.
 
-## Phase 2 - Alerts System (Week 3)
+## Phase 2 - Alerts System (Week 3) ✓ COMPLETE
 - [x] Implement Alerts UI (AlertsBell, AlertsDrawer, AlertTriggerItem, AlertRuleRow, QuietHoursToggle, MuteAllSwitch, AlertEmptyState).
 - [x] Add hooks and stores (useAlertsQuery, useAlertStream, useAlertsUiStore with cooldown and dedupe handling).
 - [x] Surface quiet hours and mute states; confirm aria-live "polite" announcements.
@@ -40,50 +40,161 @@ Last updated: 2025-10-03
 - [x] Add delivery channel preferences (in-app, push, email/SMS placeholders) and quiet-hours schedule UI.
 - [x] Package Alerts as `@modules/alerts` with configurable channels via site configuration (toggle SMS/email per tenant).
 
-## Phase 3 - Portfolio & Journal (Weeks 4-5)
-- [ ] Deliver Portfolio views (PortfolioSummary, PortfolioList, PortfolioRow, PositionDetailPanel).
-- [ ] Implement dialogs (AdjustSafetyDialog, SellConfirmDialog, SetTargetDialog) with paper-trade integrations.
-- [ ] Stand up Journal UI (JournalPage, JournalEntryCard, filters, tags) and auto-ingest trade events.
-- [ ] Track navigation flows: alerts to portfolio, journal coverage percentage, paper versus live clarity.
-- [ ] Add cost basis, dividends, and realized/unrealized split in PortfolioSummary for investment view.
-- [ ] Provide export (CSV) for journal and portfolio with timezone-correct timestamps.
-- [ ] Add audit-log immutability note in UI for journal entries (edits append notes only).
-- [ ] Package Portfolio and Journal as `@modules/portfolio` and `@modules/journal` with telemetry namespaces and site-config toggles.
+## Phase 3 - Portfolio & Journal (Weeks 4-5) ✓ COMPLETE
+- [x] Deliver Portfolio views (PortfolioSummary, PortfolioList, PortfolioRow, PositionDetailPanel). See `components/portfolio/`.
+- [x] Implement dialogs (AdjustSafetyDialog, SellConfirmDialog, SetTargetDialog) with paper-trade integrations. See `components/portfolio/*Dialog.tsx`.
+- [x] Stand up Journal UI (JournalPage, JournalEntryCard, filters, tags) and auto-ingest trade events. See `components/journal/`.
+- [x] Track navigation flows: alerts to portfolio, journal coverage percentage, paper versus live clarity. Extended telemetry taxonomy with navigation events; added TradeModeIndicator component.
+- [x] Add cost basis, dividends, and realized/unrealized split in PortfolioSummary for investment view. Integrated in PortfolioSummary.tsx.
+- [x] Provide export (CSV) for journal and portfolio with timezone-correct timestamps. See `lib/utils/export.ts`.
+- [x] Add audit-log immutability note in UI for journal entries (edits append notes only). Displayed in JournalPage and JournalEntryCard.
+- [x] Package Portfolio and Journal as `@modules/portfolio` and `@modules/journal` with telemetry namespaces and site-config toggles. See `modules/portfolio/` and `modules/journal/`.
 
-## Phase 4 - Expert Surfaces (Weeks 6-7)
-- [ ] Add Expert module toggles in Settings (Indicators, Options, Diagnostics).
-- [ ] Lazy-load Expert panels (ExpertPanelIndicators, ExpertPanelOptions, ExpertPanelDiagnostics).
-- [ ] Ship Indicator and Chart settings panels with template persistence and multi-chart layout.
-- [ ] Release Glossary and Explore surfaces powered by ExplainService.search.
-- [ ] Support "indicator on indicator" validation (range checks, dependency hints, sample presets).
-- [ ] Add diagnostics chips (model confidence, drift light, top drivers preview) with progressive disclosure.
-- [ ] Persist per-user templates (indicator set, chart layout) with import/export.
-- [ ] Package Expert features as `@modules/indicators`, `@modules/options`, `@modules/diagnostics`, enableable via site configuration per tenant.
-- [ ] Implement site-config theming (tenant-level theme tokens and module visibility rules, e.g., hide Options by jurisdiction).
+**Notes for Team:**
+- All portfolio dialogs include prominent paper-trade indicators
+- Journal entries from system are immutable; only notes can be appended
+- Export utilities handle timezone offsets correctly (UTC+XX:XX format)
+- Coverage tracking helps users understand journal completeness
+- Both modules follow established patterns from @modules/today and @modules/alerts
 
-## Phase 5 - Rules Engine & Advanced Alerts (Week 8)
-- [ ] Build RuleBuilder (IF/AND/OR UI), RuleLibrary, RulePreview with backend contract definition.
-- [ ] Extend AlertsService with create, update, delete, and preview endpoints (coordinate with backend owners).
-- [ ] Capture rule-build duration and helpfulness telemetry; document presets for onboarding.
-- [ ] Add rule validation and conflict detection (duplicate conditions, impossible thresholds).
-- [ ] Provide rule templates (common strategies) and inline explainers for each condition.
-- [ ] Package Rules as `@modules/rules` with pluggable condition providers (indicators, news, options) discoverable via module registry and site configuration.
+## Phase 4 - Expert Surfaces (Weeks 6-7) ✓ COMPLETE
+- [x] Add Expert module toggles in Settings (Indicators, Options, Diagnostics). See `components/settings/ExpertModuleToggles.tsx`.
+- [x] Lazy-load Expert panels (ExpertPanelIndicators, ExpertPanelOptions, ExpertPanelDiagnostics). See `components/expert/`.
+- [x] Ship Indicator and Chart settings panels with template persistence and multi-chart layout. See `components/expert/ChartSettingsPanel.tsx`.
+- [x] Release Glossary and Explore surfaces powered by ExplainService.search. See `components/explore/GlossaryPage.tsx`.
+- [x] Support "indicator on indicator" validation (range checks, dependency hints, sample presets). See `lib/validation/indicator-validation.ts`.
+- [x] Add diagnostics chips (model confidence, drift light, top drivers preview) with progressive disclosure. See `components/diagnostics/DiagnosticsChip.tsx`.
+- [x] Persist per-user templates (indicator set, chart layout) with import/export. See `lib/hooks/useTemplatePersistence.ts`.
+- [x] Package Expert features as `@modules/indicators`, `@modules/options`, `@modules/diagnostics`, enableable via site configuration per tenant. See `modules/indicators/`, `modules/options/`, `modules/diagnostics/`.
+- [x] Implement site-config theming (tenant-level theme tokens and module visibility rules, e.g., hide Options by jurisdiction). Extended `lib/config/site-config.ts` with ThemeTokens and ModuleVisibility.
 
-## Phase 6 - ML Insights & Regime Hinting (Week 9)
-- [ ] Integrate drivers and regime data in PlanCard (Why Now panel, DiagnosticsSummary chip, RegimeBanner).
-- [ ] Map driver codes to CopyService entries and cap display to top three.
-- [ ] Collect feedback on insight panels (helpful versus confusing signals).
-- [ ] Display confidence stability over time (last N minutes) with simplified labels in Beginner mode.
-- [ ] Tone down recommendations automatically in high-volatility regimes (copy plus badge updates).
-- [ ] Package ML insight surfaces as `@modules/ml-insights` gated by site configuration to allow tenant opt-out.
+**Notes for Team:**
+- Expert panels are lazy-loaded via next/dynamic for code-splitting (see `components/expert/index.tsx`)
+- Module index files (`modules/indicators/index.ts`, `modules/options/index.ts`, `modules/diagnostics/index.ts`) now export from lazy wrapper
+- ExpertModuleToggles integrated into Settings page Advanced tab with localStorage persistence and telemetry tracking
+- ExpertModuleToggles now accepts required `mode` prop and optional `enabledModules` for controlled state
+- Settings page passes `preferences.dashboardMode` (correct field) and `expertModules` state to ExpertModuleToggles
+- Component properly gates: shows "Expert Modules Locked" message when mode='beginner', full UI when mode='expert'
+- Indicator validation includes 5 sample presets for quick setup
+- Options module respects jurisdiction restrictions (US-only by default)
+- Diagnostics chip can be embedded in PlanCard for inline insights
+- Template persistence uses localStorage with optional backend sync (useTemplatePersistence.ts - filename fixed)
+- Site-config supports hot-reload for runtime module enablement
+- Theme tokens allow full tenant branding customization
+- Glossary now has 60 comprehensive terms (20 technical, 15 options, 10 risk, 8 fundamental, 7 general) with dual beginner/expert definitions
+- Glossary wired to GLOSSARY_TERMS data source with telemetry tracking for views and term selections
+- Telemetry taxonomy extended with TelemetryCategory.EXPLORE and TelemetryCategory.RULES
+- GlossaryViewedEvent and GlossaryTermSelectedEvent properly typed and included in TelemetryEvent union
 
-## Phase 7 - Learn Hub & Micro-Lessons (Week 10)
-- [ ] Launch LearnHub (lesson catalog, glossary search, contextual entry points).
-- [ ] Instrument lesson completion and retention metrics.
-- [ ] Ensure tooltips and micro-lessons share a single content source.
-- [ ] Add "continue where you left off" and recommended next lesson based on activity.
-- [ ] Version glossary entries with `lastReviewed` and display freshness date.
-- [ ] Package Education as `@modules/learn` with content packs selectable per site configuration (beginner-only versus full library).
+## Phase 5 - Rules Engine & Advanced Alerts (Week 8) ✓ COMPLETE
+- [x] Build RuleBuilder (IF/AND/OR UI with drag-and-drop), RuleLibrary, RulePreview with backend contract definition. See `components/rules/RuleBuilder.tsx`, `components/rules/RuleLibrary.tsx`, `components/rules/RulePreview.tsx`.
+- [x] Extend AlertsService with create, update, delete, and preview endpoints (coordinate with backend owners). See `lib/api/rules.ts` with full CRUD operations.
+- [x] Capture rule-build duration and helpfulness telemetry; document presets for onboarding. Extended `lib/telemetry/taxonomy.ts` with 10 new rule events.
+- [x] Add rule validation and conflict detection (duplicate conditions, impossible thresholds). See `lib/validation/rule-validation.ts` with comprehensive validation.
+- [x] Provide rule templates (common strategies) and inline explainers for each condition. 8 pre-built templates in `lib/api/rules.ts` (RSI Oversold, MACD Cross, Stop Loss, etc.).
+- [x] Package Rules as `@modules/rules` with pluggable condition providers (indicators, news, options) discoverable via module registry and site configuration. See `modules/rules/` with module.config.ts and full API exports.
+
+**Notes for Team:**
+- RuleBuilder supports nested AND/OR groups (expert mode only) with enforced 3-level maximum depth
+- Nesting cap implemented: `addGroup` checks depth before adding (RuleBuilder.tsx:175-179), "Add Group" button disabled at max depth (:520-530, :531-545)
+- Real-time validation active: `validateRuleGroup` runs on every `rootGroup` change via `useEffect` (:312-315)
+- Validation displays errors, warnings, and conflicts in real-time Alert components at top of builder (:572-606)
+- Save button disabled when `!validation.valid` or `validation.conflicts.length > 0` (:692-695)
+- Imports validation utilities from `lib/validation/rule-validation.ts` (:42-48)
+- 6 condition types available: indicator, price, volume, news, options, time
+- 6 operators: greater_than, less_than, equals, crosses_above, crosses_below, between
+- 4 action types: alert, notify, buy, sell (buy/sell require approval in production)
+- RulePreview runs 30-day backtest and shows win rate, avg profit, max profit/loss
+- Conflict detection catches impossible conditions (e.g., RSI > 70 AND RSI < 30)
+- Validation warnings for edge cases (RSI > 90, volume ratio > 5, etc.)
+- 8 templates provided: Momentum (2), Reversal (1), Breakout (3), Risk Management (2)
+- All rule interactions tracked with telemetry (10 events: save, preview, add/delete condition/group, etc.)
+- Backend coordination needed for: POST /api/rules, GET /api/rules, PATCH /api/rules/:id, DELETE /api/rules/:id, POST /api/rules/preview, GET /api/rules/templates
+- **Drag-and-drop implemented:** Native HTML5 drag-and-drop for condition reordering (RuleBuilder.tsx:142-229)
+  - Conditions draggable within same group or between groups
+  - Visual feedback: opacity, border color, cursor changes during drag
+  - Drag handle icon (DragIndicator) on each condition
+  - Telemetry tracking for reordering actions
+  - No external packages required (native browser APIs)
+
+## Phase 6 - ML Insights & Regime Hinting (Week 9) ✓ COMPLETE
+- [x] Integrate drivers and regime data in PlanCard (Why Now panel, DiagnosticsSummary chip, RegimeBanner). See `components/ml-insights/WhyNowPanel.tsx`, `components/diagnostics/DiagnosticsChip.tsx`, `components/ml-insights/RegimeBanner.tsx`.
+- [x] Map driver codes to CopyService entries and cap display to top three. See `lib/copy/driver-copy.ts` with 40 driver mappings (10 technical, 5 fundamental, 5 sentiment, 6 options, 4 macro).
+- [x] Collect feedback on insight panels (helpful versus confusing signals). Integrated in DiagnosticsChip with Yes/No feedback buttons and telemetry tracking.
+- [x] Display confidence stability over time (last N minutes) with simplified labels in Beginner mode. DiagnosticsChip shows trend (rising/stable/falling) with beginner labels.
+- [x] Tone down recommendations automatically in high-volatility regimes (copy plus badge updates). See `lib/copy/regime-toning.ts` with auto-adjustment logic.
+- [x] Package ML insight surfaces as `@modules/ml-insights` gated by site configuration to allow tenant opt-out. See `modules/ml-insights/` with module.config.ts and full package structure.
+
+**Notes for Team:**
+- DiagnosticsChip enhanced from Phase 4 to use new DiagnosticsSummary contract with full ML insights
+- Shows model confidence (0-100%), drift status (green/yellow/red), confidence stability trend, and top 3 drivers
+- Feedback collection UI embedded with Yes/No buttons, tracks telemetry on helpful/not helpful
+- RegimeBanner supports 6 regime types: bull_trending, bear_trending, choppy, high_volatility, low_volatility, unknown
+- Regime banner auto-adjusts recommendation_tone: aggressive (favorable), moderate (normal), cautious (risky)
+- WhyNowPanel displays top 3 ML drivers with beginner/expert copy, category badges, strength indicators
+- Driver copy service has 40 mappings covering all major signal types with dual beginner/expert explanations
+- Regime toning utilities automatically adjust action verbs ("Consider buying" vs "Watch before buying") based on market conditions
+- High volatility regime adds qualifiers like "Markets are volatile" and "Use tight stop-losses"
+- Bear trending regime warns about counter-trend risk when buying
+- All components support beginner/expert modes with appropriate language complexity
+- Telemetry tracking for all interactions (8 events, all properly emitted):
+  * diagnostics_expanded/collapsed (includes confidence + drift_status payload)
+  * diagnostics_feedback (helpful boolean)
+  * regime_banner_viewed (includes regime + confidence + recommendation_tone)
+  * regime_banner_dismissed
+  * driver_clicked (includes driver_name + driver_category + contribution)
+  * why_now_panel_viewed (includes symbol + num_drivers)
+  * insight_helpful/confusing (emitted from DiagnosticsChip, WhyNowPanel, RegimeBanner with insight_type)
+- Module packaged with module.config.ts, package.json, README.md, and full API exports
+- Site configuration includes modules.mlInsights toggle for tenant-level control
+- No external package dependencies - all native React and Lucide icons
+- Accessibility: full keyboard navigation, ARIA labels, color-blind safe (icons + text)
+- Backend coordination needed for: GET /api/ml-insights endpoint returning DiagnosticsSummary, RegimeData, MLDriver[], ConfidenceStability
+
+## Phase 7 - Learn Hub & Micro-Lessons (Week 10) ✓ COMPLETE
+- [x] Launch LearnHub (lesson catalog, glossary search, contextual entry points). See `app/learn/page.tsx` with full catalog UI, search, and filtering.
+- [x] Instrument lesson completion and retention metrics. See 10 new telemetry events in `lib/telemetry/taxonomy.ts` (hub_viewed, lesson_started/completed, quiz_answered, etc.).
+- [x] Ensure tooltips and micro-lessons share a single content source. GlossaryEntry type includes relatedLessons field for linking.
+- [x] Add "continue where you left off" and recommended next lesson based on activity. See `components/learn/ContinueBanner.tsx` with progress resume and RecommendedLesson type with relevance scoring.
+- [x] Version glossary entries with `lastReviewed` and display freshness date. GlossaryEntry includes lastReviewed, version, and freshnessStatus ('current' | 'review_soon' | 'outdated').
+- [x] Package Education as `@modules/learn` with content packs selectable per site configuration (beginner-only versus full library). See `modules/learn/` with full package structure and site config integration.
+
+**Notes for Team:**
+- Comprehensive lesson contracts: Lesson, LessonProgress, LearningPath, GlossaryEntry with versioning
+- 7 lesson categories: basics, technical, fundamental, risk, psychology, platform, strategy
+- 3 difficulty levels: beginner, intermediate, advanced
+- 6 content block types: text (markdown), image, video, quiz, interactive, code
+- **Shared mock data utility** (lib/data/mock-lessons.ts): 3 lessons with full content/quizzes, 2 paths, progress data, getLessonBySlug() lookup
+- Mock data used consistently: Learn Hub (app/learn/page.tsx:39-49) imports MOCK_LESSONS/PATHS/PROGRESS
+- **LessonViewer correctly loads by slug** (app/learn/[slug]/page.tsx:25-42): Uses getLessonBySlug() to match route param, redirects if not found
+- LearnHub catalog page (/learn) with search, category/difficulty filters, lesson cards, paths, recommended lessons
+- **GlossarySearch component** (components/learn/GlossarySearch.tsx) with fuzzy search, freshness indicators, integrated into Learn Hub
+- **LessonViewer page** with block-by-block navigation, quiz flow, progress bar, completion tracking, correct telemetry for each lesson
+- LessonCard shows progress (not started/in progress/completed), difficulty, duration, quiz indicator
+- ContinueBanner displays last in-progress lesson with progress bar, resume button, and telemetry
+- PathCard shows learning path with multi-lesson progress tracking and telemetry
+- LessonProgress tracks status, currentBlockIndex, quizScore, timeSpentSeconds
+- GlossaryEntry versioning: lastReviewed date, version number, freshnessStatus calculation
+- Freshness statuses: 'current' (<6 months), 'review_soon' (6-12 months), 'outdated' (>12 months)
+- RecommendedLesson with reason string and relevanceScore (0-1) for personalized suggestions
+- Quiz system with QuizQuestion type (multiple choice with correctAnswer index and explanation), implemented in LessonViewer
+- **All 10 telemetry events properly emitted:**
+  1. hub_viewed (app/learn/page.tsx:166-171)
+  2. lesson_started (app/learn/[slug]/page.tsx:49-55, LessonCard.tsx:64-72)
+  3. lesson_completed (app/learn/[slug]/page.tsx:88-95)
+  4. lesson_block_viewed (app/learn/[slug]/page.tsx:59-68)
+  5. quiz_answered (app/learn/[slug]/page.tsx:72-79)
+  6. glossary_searched (GlossarySearch.tsx:44-49)
+  7. glossary_term_viewed (GlossarySearch.tsx:53-58)
+  8. path_started (PathCard.tsx:22-28)
+  9. continue_lesson_clicked (ContinueBanner.tsx:20-25, LessonCard.tsx:64-66)
+  10. recommended_lesson_clicked (LessonCard.tsx:67-72)
+- Content blocks support markdown text, images with captions, video embeds, quizzes, interactive demos, code examples
+- Prerequisites tracking - Lesson.prerequisites array for required lessons
+- Module packaged as @modules/learn with package.json and exports
+- Site configuration: modules.learn toggle for tenant-level control
+- Backend coordination needed: GET /api/learn (lessons, paths, userProgress, recommended, continueLesson), GET /api/glossary?q=query (search with fuzzy matching)
+- Content packs concept ready: backend can filter lessons by difficulty for beginner-only vs full library per tenant
 
 ## Phase 8 - Hardening (Week 11)
 - [ ] Hit performance budgets (LCP <2.5 s, realtime throttling, bundle-split expert modules and charts).

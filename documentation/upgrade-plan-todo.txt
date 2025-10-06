@@ -1,0 +1,61 @@
+# Trading Platform Upgrade Plan TODO
+Last updated: 2025-10-03
+
+## Program Setup & Guardrails (Pre-work)
+- [ ] Align stakeholders on scope, sequencing, and RACI; schedule working sessions for research, engineering, data, and operations.
+- [ ] Confirm data coverage for L2, microstructure, and historical triggers; backfill gaps or adjust the rollout timeline.
+- [ ] Stand up shared experiment namespace (object storage, Timescale datasets, secrets) and document access controls.
+- [ ] Update engineering handbook with preregistration, labeling, telemetry, and kill-switch policies; review with team leads.
+
+## 1. Science Hygiene and False-Discovery Control
+- [ ] Create preregistration template at `research/prereg/{study_id}/analysis_plan.md` covering hypotheses, metrics, parameter grid, exclusion rules, and stopping rules.
+- [ ] Add CI guard that blocks merges when new study folders lack `analysis_plan.md`, with manual override gated by reviewer approval.
+- [ ] Implement `research/stat/power_calc.py` with CLI or notebook helper to estimate minimum trades per regime for 80-90% power; include unit tests and documentation.
+- [ ] Implement `research/stat/fdr_control.py` with Benjamini-Hochberg adjustment and integrate into sweep pipelines; persist adjusted p-values in the results database.
+- [ ] Add placebo and permutation regression tests in `tests/research/test_placebo_effects.py` (timestamp shuffles, LVN offsets) and wire them into CI.
+
+## 2. Causal Evidence and Baselines
+- [ ] Create `experiments/baselines/prev_value_edges.py`, `vwap_bands.py`, `anchored_vwap.py`, and `price_action_only.py` to benchmark current edges.
+- [ ] Build standardized delta-vs-baseline reporting table shared by experiments and reporting jobs.
+- [ ] Implement `research/stat/equiv_tests.py` with TOST and difference-in-differences helpers; cover expected regimes with tests and documentation.
+- [ ] Add ablation workflow that plugs baseline results and equivalence tests into experiment review dashboards.
+
+## 3. Labeling and Leakage Hardening
+- [ ] Add `tests/leakage/test_swing_anchor_causality.py` to ensure LVN anchors respect as_of boundaries.
+- [ ] Create `labeling/service/label_definitions.yaml` with state, location, and trigger metadata; document schema in README.
+- [ ] Implement `labeling/service/labeler.py` as a deterministic pure function and emit content-hash snapshots (`labels_hash`) to Timescale for reproducibility.
+- [ ] Add `tests/microstructure/test_aggressor_inference.py` that validates MBO to trade-side reconstruction against fixtures.
+- [ ] Document labeling change management process and align with data governance review.
+
+## 4. Execution Realism
+- [ ] Implement `execution_sim/limit_fill_model.py` modeling price-time priority, cancel rates, and queue depletion from L2 tape.
+- [ ] Add `execution_sim/stop_burst_penalty.py` capturing adverse slippage when clustered stops trigger.
+- [ ] Create `execution_sim/latency_emulator.py` applying configurable 100-300 ms delay and drift; integrate into backtests and parameterize per venue.
+- [ ] Build `research/capacity/capacity_curve.py` to estimate expectancy versus size and publish safe capacity limits per symbol.
+- [ ] Validate execution models against historical fills and record assumptions in documentation.
+
+## 5. Edge Health Telemetry
+- [ ] Emit Prometheus metrics (`edge_hit_rate`, `edge_mae_p95`, `edge_expectancy_bps`, `edge_quality_bucket_expectancy{q=0..3}`) from the strategy runtime.
+- [ ] Create Grafana dashboard `dashboards/edge_health.json` with SPC charts for hit rate, MAE/MFE distributions, time-to-break-even, and expectancy by quality bucket.
+- [ ] Implement `services/strategy-service/app/logs/decision_log.py` to capture skipped_reason, missing_condition, and latency_to_action_ms into Timescale.
+- [ ] Define SPC alarm rules that toggle `TRADING_ENABLED` feature flag when drift or decay thresholds are breached; document runbook.
+
+## 6. Study Output Packaging
+- [ ] Implement `reports/edge_proof_pack.py` to compile baseline comparisons, ablations, walk-forward curves, placebo tests, capacity curves, execution assumptions, and data quality attestations.
+- [ ] Generate both PDF and JSON bundles containing commit SHAs, labeler hash, and feature store references; automate via CI pipeline.
+- [ ] Publish usage guide and checklist for reviewers to validate edge proof packs before investor distribution.
+
+## 7. Governance and Reproducibility
+- [ ] Create model and data cards (`cards/model_card_{strategy}.md`, `cards/data_card_market_data.md`) outlining sources, licenses, limitations, and failure modes.
+- [ ] Build `research/results_registry/` schema or service that stores prereg ID, code SHA, data snapshot, metrics, p-values, and reviewer sign-off.
+- [ ] Link registry updates to deployment pipeline and require reviewer sign-off before promoting new edges.
+
+## 8. First vs Second Drive Formalization
+- [ ] Implement `signals/first_second_drive.py` defining first drive and second drive logic (k x ATR threshold, LVN pullback limits, CVD slope, bubble count).
+- [ ] Add deterministic tests in `tests/signals/test_drive_defs.py` to enforce no look-ahead behavior and consistent outputs across runs.
+- [ ] Document drive definitions and integration points for downstream strategies and analytics.
+
+## Rollout and Change Management
+- [ ] Sequence delivery across sprints (science hygiene, labeling, execution, telemetry) and maintain status in this checklist.
+- [ ] Track training sessions for new processes (preregistration workflow, telemetry monitoring, kill-switch usage) and collect feedback.
+- [ ] Plan post-deployment audit to review statistical guardrails, execution realism metrics, and edge health telemetry effectiveness.
