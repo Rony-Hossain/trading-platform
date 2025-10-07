@@ -1,0 +1,5 @@
+# Frontend Copy & Telemetry Reference
+
+- **CopyService**: `lib/copy/copy-service.ts` centralises product strings. Each surface (alerts, diagnostics, navigation, banners) references CopyService keys; new UI strings must be added there with beginner/expert variants before implementation. The admin control panel and launch modals also rely on CopyService keys (`nav.*`, `feedback.*`, `alerts.*`).
+- **Telemetry schema**: `lib/telemetry/taxonomy.ts` enumerates all client events. All new telemetry events must extend this file and use `trackEvent`, which now sanitises payloads via `lib/privacy/sanitize.ts`. Contract tests assert plan/alert schemas (`tests/contracts/*.contract.test.ts`).
+- **Compliance guardrails**: Component-level compliance hooks live in `components/today/PlanCard.tsx` (badges, decision-path), `components/alerts/AlertTriggerItem.tsx` (rate limits, retention notices), and `components/news/NewsQuickList.tsx` (provider attribution, ToS reminders). Document any additional guardrails here when extending surfaces.

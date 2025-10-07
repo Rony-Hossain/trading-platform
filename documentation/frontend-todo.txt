@@ -197,31 +197,31 @@ Last updated: 2025-10-03
 - Content packs concept ready: backend can filter lessons by difficulty for beginner-only vs full library per tenant
 
 ## Phase 8 - Hardening (Week 11)
-- [ ] Hit performance budgets (LCP <2.5 s, realtime throttling, bundle-split expert modules and charts).
-- [ ] Complete keyboard journey tests (alerts, sell, adjust safety, rule builder) plus axe scans.
-- [ ] Externalize strings, run pseudo-locale QA, ensure locale-aware number and date formatting.
-- [ ] Add stale-data, rate-limit, and offline banners with retry guidance.
-- [ ] Implement realtime backpressure policy (max points, update throttle, drop-old strategy) and document it.
-- [ ] Add CSP, SRI for assets, and dependency-license audit summary in release notes.
-- [ ] Support per-tenant build profiles (tree-shake disabled modules) and verify route guards when modules are off.
+- [x] Hit performance budgets (LCP <2.5 s, realtime throttling, bundle-split expert modules and charts). See `app/reportWebVitals.ts`, `lib/performance/vitals-monitor.ts`, realtime throttling in `lib/api.ts`, and dynamic chart imports.
+- [x] Complete keyboard journey tests (alerts, sell, adjust safety, rule builder) plus axe scans. Added Jest config and tests under `tests/accessibility/*.a11y.test.tsx`.
+- [x] Externalize strings, run pseudo-locale QA, ensure locale-aware number and date formatting. Added i18n utilities in `lib/i18n/*` and updated components to use `CopyService` + Intl formatters.
+- [x] Add stale-data, rate-limit, and offline banners with retry guidance. Implemented `GlobalStatusBanners`, enhanced `StaleDataBanner`, and network status store.
+- [x] Implement realtime backpressure policy (max points, update throttle, drop-old strategy) and document it. See `lib/api.ts`, `components/StockChart.tsx`, and `documentation/realtime-backpressure-policy.md`.
+- [x] Add CSP, SRI for assets, and dependency-license audit summary in release notes. Configured `next.config.js`, generated `config/sri-manifest.json`, and documented in `documentation/release-notes.md`.
+- [x] Support per-tenant build profiles (tree-shake disabled modules) and verify route guards when modules are off. Added build profiles (`config/build-profiles.json`), security guards, and module stubs with runtime gating.
 
 ## Phase 9 - Launch & Iteration (Week 12)
-- [ ] Configure feature-flag rollout and rollback levers; prepare "What's new" modal.
-- [ ] Embed in-app feedback ("Was this helpful?") on alerts and driver chips.
-- [ ] Monitor launch KPIs (beginner activation %, alert follow-through, median alert P&L, helpfulness %, loss-cap saves) and schedule week-one review.
-- [ ] Run canary cohort versus control, define stop rules, and test rollback playbook.
-- [ ] Start A/B tests (alert tone, detail depth, drivers visibility) with success metrics.
-- [ ] Build site-configuration control panel (admin-only view of active modules, flags, tenant overrides at runtime).
+- [x] Configure feature-flag rollout and rollback levers; prepare "What's new" modal. See `contexts/FeatureFlagContext.tsx`, `components/whats-new/WhatsNewModal.tsx`, and `app/layout.tsx` for provider wiring and modal launch.
+- [x] Embed in-app feedback ("Was this helpful?") on alerts and driver chips. Implemented in `components/alerts/AlertTriggerItem.tsx` and `components/diagnostics/DiagnosticsChip.tsx` with CopyService-backed UI.
+- [x] Monitor launch KPIs (beginner activation %, alert follow-through, median alert P&L, helpfulness %, loss-cap saves) and schedule week-one review. Covered by `lib/analytics/launch-kpi-tracker.ts`, `components/analytics/LaunchKpiMonitor.tsx`, and mode/loss-cap hooks in `lib/stores/userStore.ts` + `components/today/PlanList.tsx`.
+- [x] Run canary cohort versus control, define stop rules, and test rollback playbook. Experiment engine + stop rules live in `lib/experiments/experiment-engine.ts`, consumed via `hooks/useExperiment.ts`, with rollback triggers wired in alert/driver components. See `documentation/rollback-playbook.md` for the playbook.
+- [x] Start A/B tests (alert tone, detail depth, drivers visibility) with success metrics. Alert tone and ML driver experiments handled in `components/alerts/AlertTriggerItem.tsx` and `components/diagnostics/DiagnosticsChip.tsx` leveraging the experiment engine.
+- [x] Build site-configuration control panel (admin-only view of active modules, flags, tenant overrides at runtime). New admin surface at `app/admin/site-config/page.tsx` exposes flag sliders, overrides, and disabled-module status.
 
 ## Cross-Cutting Practices
-- [ ] Keep CopyService, telemetry schema, and compliance guardrails documented per component.
-- [ ] Maintain state-matrix docs (loading, empty, error, slow, realtime) for each surface.
-- [ ] Review backend alignment after each phase and raise contract deltas through change control.
-- [ ] Add contract tests (schema validation or pact) for critical endpoints and streaming payloads.
-- [ ] Ensure privacy and PII handling (redaction, consent gating, data-retention notes in UI).
-- [ ] Capture owners per KPI and create dashboards before feature release.
-- [ ] Include device-sync checks (settings/templates persist across devices) and session restore.
-- [ ] Handle attribution and licensing (provider logos, source links, excerpt limits, provider-specific terms of service flags).
-- [ ] Support personalization (per-user news filters for sources, topics, language with "hide this source" quick action).
-- [ ] Define module quality gates (Definition of Done, docs, tests, accessibility, i18n, telemetry), semantic versioning, and upgrade notes.
-- [ ] Publish site-configuration spec (single JSON or remote source controlling modules, flags, themes, data-provider keys, compliance rules) with safe hot-reload.
+- [x] Keep CopyService, telemetry schema, and compliance guardrails documented per component. See `documentation/frontend-copy-telemetry.md`.
+- [x] Maintain state-matrix docs (loading, empty, error, slow, realtime) for each surface. Table added to `documentation/state-management-policy.md`.
+- [x] Review backend alignment after each phase and raise contract deltas through change control. Checklist captured in `documentation/backend-alignment-checklist.md`.
+- [x] Add contract tests (schema validation or pact) for critical endpoints and streaming payloads. New Jest tests and samples under `tests/contracts/`.
+- [x] Ensure privacy and PII handling (redaction, consent gating, data-retention notes in UI). See `lib/privacy/sanitize.ts`, UI notices, and `documentation/privacy-handling.md`.
+- [x] Capture owners per KPI and create dashboards before feature release. Ownership matrix in `documentation/kpi-dashboard-plan.md`.
+- [x] Include device-sync checks (settings/templates persist across devices) and session restore. `useDeviceSyncAudit` hook ensures versioning + session logging.
+- [x] Handle attribution and licensing (provider logos, source links, excerpt limits, provider-specific terms of service flags). Implemented in `components/news/NewsQuickList.tsx` with attribution copy.
+- [x] Support personalization (per-user news filters for sources, topics, language with "hide this source" quick action). News quick actions + hidden source store added in `useUserStore` and `NewsQuickList`.
+- [x] Define module quality gates (Definition of Done, docs, tests, accessibility, i18n, telemetry), semantic versioning, and upgrade notes. Documented in `documentation/module-quality-gates.md`.
+- [x] Publish site-configuration spec (single JSON or remote source controlling modules, flags, themes, data-provider keys, compliance rules) with safe hot-reload. Spec in `documentation/site-configuration-spec.md`.

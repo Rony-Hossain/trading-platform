@@ -8,6 +8,7 @@ Acceptance Criteria:
 - Audit trail: Immutable fill records with timestamps
 """
 import asyncio
+import os
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from typing import List, Dict, Any, Optional
@@ -446,13 +447,13 @@ async def startup():
     global db_pool, trade_journal
 
     db_pool = await asyncpg.create_pool(
-        host="localhost",
-        port=5432,
-        database="trading_db",
-        user="trading_user",
-        password="trading_pass",
-        min_size=2,
-        max_size=10
+        host=os.getenv("TRADE_JOURNAL_DB_HOST", "localhost"),
+        port=int(os.getenv("TRADE_JOURNAL_DB_PORT", "5432")),
+        database=os.getenv("TRADE_JOURNAL_DB_NAME", "trading_db"),
+        user=os.getenv("TRADE_JOURNAL_DB_USER", "trading_user"),
+        password=os.getenv("TRADE_JOURNAL_DB_PASSWORD", "trading_pass"),
+        min_size=int(os.getenv("TRADE_JOURNAL_DB_MIN_POOL", "2")),
+        max_size=int(os.getenv("TRADE_JOURNAL_DB_MAX_POOL", "10"))
     )
 
     trade_journal = TradeJournalService(db_pool)

@@ -379,6 +379,15 @@ afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 ```
 
+## State Matrix Reference
+
+| Surface | Loading | Empty | Error | Slow | Realtime |
+| --- | --- | --- | --- | --- | --- |
+| Today (PlanList) | Spinner + CopyService loading text | CopyService empty text | MUI Alert with retry | Stale banner triggered at >5m | `REALTIME_BUDGETS` throttle + Launch KPI tracking |
+| Alerts Drawer | Skeleton placeholders | Friendly empty copy | Alert with fallback CTA | Rate-limit banner (`GlobalStatusBanners`) | Canary tone experiment + feedback loops |
+| Diagnostics Chip | Pulse shimmer | Hidden when no diagnostics | Drift warning panel | Stability trend indicator | Driver feedback experiments |
+| Admin Control Panel | Inline loading message | N/A | Planned snackbar | N/A | Flag overrides persist immediately |
+
 ## Migration Path
 
 1. **Phase 0**: Set up React Query client and Zustand stores
