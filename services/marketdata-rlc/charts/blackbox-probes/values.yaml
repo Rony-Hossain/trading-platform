@@ -1,0 +1,54 @@
+blackboxExporter:
+  enabled: true
+  namespace: monitoring
+  image:
+    repository: prom/blackbox-exporter
+    tag: v0.25.0
+    pullPolicy: IfNotPresent
+  service:
+    name: blackbox-exporter
+    type: ClusterIP
+    port: 9115
+    portName: http
+  serviceSelectorLabels:
+    app: blackbox-exporter
+  serviceAddress: "blackbox-exporter.monitoring.svc:9115"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  podSecurityContext:
+    runAsNonRoot: true
+    seccompProfile: { type: RuntimeDefault }
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: { drop: ["ALL"] }
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+  config: |
+    modules:
+      http_2xx:
+        prober: http
+        timeout: 10s
+        http:
+          method: GET
+          valid_http_versions: ["HTTP/1.1", "HTTP/2"]
+          preferred_ip_protocol: "ip4"
+
+releaseLabel: kube-prometheus-stack
+
+defaults:
+  module: http_2xx
+  interval: 30s
+  scrapeTimeout: 15s
+
+providers:
+  - name: providerA
+    url: https://api.example.com/v1/health
+  - name: providerB
+    url: https://api.providerb.com/v1/health

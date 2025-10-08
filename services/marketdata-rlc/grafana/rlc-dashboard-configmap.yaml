@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rlc-dashboard
+  labels:
+    grafana_dashboard: "1"
+data:
+  rlc_dashboard.json: |
+    { "id": null, "title": "MarketData RLC – Bandit & Compliance", "schemaVersion": 39, "refresh": "30s",
+      "panels": [
+        { "type": "timeseries", "title": "Bandit Arm Share (rate)", "id": 1,
+          "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+          "targets": [
+            { "expr": "sum by (provider, arm) (rate(bandit_arm_selection_total[5m]))",
+              "legendFormat": "{{provider}} {{arm}}", "refId": "A" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "ops" } }
+        },
+        { "type": "timeseries", "title": "Observed Error Rate vs Constraint", "id": 2,
+          "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+          "targets": [
+            { "expr": "rlc_observed_error_rate", "legendFormat": "{{provider}} observed", "refId": "A" },
+            { "expr": "vector(0.02)", "legendFormat": "constraint", "refId": "B" }
+          ],
+          "fieldConfig": { "defaults": { "unit": "percentunit" } }
+        },
+        { "type": "stat", "title": "Constraint Violations (1h)", "id": 3,
+          "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+          "targets": [
+            { "expr": "sum(increase(rlc_error_constraint_violations_total[1h]))", "legendFormat": "violations", "refId": "A" }
+          ],
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } }
+        }
+      ]
+    }

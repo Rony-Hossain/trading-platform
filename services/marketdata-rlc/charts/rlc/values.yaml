@@ -1,0 +1,49 @@
+image:
+  repository: ghcr.io/yourorg/marketdata-rlc
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+replicaCount: 2
+
+service:
+  type: ClusterIP
+  port: 8080
+
+env:
+  APP_NAME: marketdata-rlc
+  ENV: dev
+  MODE: shadow
+  KAFKA_BOOTSTRAP: kafka:9092
+  KAFKA_TOPIC_UPDATES: policy.updates
+  KAFKA_TOPIC_SHADOW: policy.shadow
+  MODEL_PATH: /models/rlc_latency.onnx
+  ERROR_MODEL_PATH: /models/rlc_error.onnx
+  PG_DSN: postgres://postgres:postgres@timescale:5432/marketdata
+  PROMETHEUS_ENABLED: "true"
+  PROVIDERS: providerA,providerB
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "256Mi"
+  limits:
+    cpu: "1"
+    memory: "512Mi"
+
+serviceAccount:
+  create: true
+  name: ""
+
+serviceMonitor:
+  enabled: true
+  releaseLabel: kube-prometheus-stack
+  interval: 15s
+  scrapeTimeout: 10s
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+extraVolumes: []
+extraVolumeMounts: []

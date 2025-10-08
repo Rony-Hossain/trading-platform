@@ -1,0 +1,102 @@
+{
+  "title": "Market Data Worker – Latency • Errors • Policy TTL (by provider)",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "provider",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+        "refresh": 2,
+        "definition": "label_values(worker_fetch_latency_ms_bucket, provider)",
+        "query": "label_values(worker_fetch_latency_ms_bucket, provider)",
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {}
+      },
+      {
+        "name": "constraint",
+        "type": "constant",
+        "query": "0.02",
+        "current": { "text": "0.02", "value": "0.02" },
+        "hide": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Batch Fetch p95 Latency (ms)",
+      "id": 10,
+      "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, provider) (rate(worker_fetch_latency_ms_bucket{provider=~\"$provider\"}[5m])))",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Fetch Errors (rate / 5m)",
+      "id": 20,
+      "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+      "targets": [
+        {
+          "expr": "sum by (provider) (rate(worker_fetch_errors_total{provider=~\"$provider\"}[5m]))",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Policy TTL Fallbacks (count / 10m)",
+      "id": 30,
+      "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+      "targets": [
+        {
+          "expr": "sum by (provider) (increase(worker_policy_ttl_expired_total{provider=~\"$provider\"}[10m]))",
+          "legendFormat": "{{provider}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Current Batch Size",
+      "id": 40,
+      "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+      "targets": [
+        { "expr": "avg by (provider) (worker_current_batch_size{provider=~\"$provider\"})", "legendFormat": "{{provider}}", "refId": "A" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Observed Error Rate vs Constraint",
+      "id": 50,
+      "datasource": { "type": "prometheus", "uid": "PROM_DS" },
+      "targets": [
+        {
+          "expr": "rlc_observed_error_rate{provider=~\"$provider\"}",
+          "legendFormat": "{{provider}} observed",
+          "refId": "A"
+        },
+        {
+          "expr": "vector($constraint)",
+          "legendFormat": "constraint",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" } }
+    }
+  ]
+}

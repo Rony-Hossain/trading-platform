@@ -1,0 +1,56 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: rlc-alerts
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: marketdata-rlc
+      interval: 30s
+      rules:
+        - alert: RlcErrorConstraintViolation
+          expr: sum by (provider) (increase(rlc_error_constraint_violations_total[10m])) > 0
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "RLC error constraint violated ({{ $labels.provider }})"
+            description: "Observed error rate exceeded configured constraint for ≥10m."
+        - alert: RlcObservedErrorHigh
+          expr: rlc_observed_error_rate > 0.02
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "RLC observed error rate high ({{ $labels.provider }})"
+            description: "Observed error rate above constraint for ≥5m."
+        - alert: RlcNoPolicyUpdates
+          expr: sum by (mode, provider) (increase(rlc_policy_updates_total[5m])) < 1
+          for: 10m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "No policy updates from RLC ({{ $labels.provider }} / {{ $labels.mode }})"
+            description: "RLC hasn’t published any policy bundles in the last 5–10 minutes."
+        - alert: RlcModelInferenceSlow
+          expr: (rate(rlc_model_inference_ms_sum[5m]) / rate(rlc_model_inference_ms_count[5m])) > 5
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "RLC ONNX inference latency high"
+            description: "Average model inference time > 5ms over 5m."
+        - alert: RlcBanditArmOscillation
+          expr: sum by (provider) (rate(bandit_arm_selection_total[10m])) > 6
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "RLC bandit arm oscillation ({{ $labels.provider }})"
+            description: "Bandit is switching arms too frequently; consider adding hysteresis."

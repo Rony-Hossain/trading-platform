@@ -1,0 +1,28 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: market-data-worker-alerts
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: market-data-worker
+      rules:
+        - alert: WorkerPolicyTTLExpired
+          expr: sum by (provider) (increase(worker_policy_ttl_expired_total[10m])) > 0
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Worker using fallback policy ({{ $labels.provider }})"
+            description: "Policy TTL expired within the last 10 minutes; worker fell back to defaults."
+        - alert: WorkerFetchErrorsElevated
+          expr: sum by (provider) (increase(worker_fetch_errors_total[5m])) > 5
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Worker fetch errors elevated ({{ $labels.provider }})"
+            description: "More than five fetch errors in the last 5 minutes."

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: blackbox-target-providerb
+  namespace: monitoring
+  labels:
+    blackbox-target: "true"
+  annotations:
+    blackbox_target: "https://api.providerb.com/v1/health"
+spec:
+  clusterIP: None
+  ports:
+    - name: dummy
+      port: 80

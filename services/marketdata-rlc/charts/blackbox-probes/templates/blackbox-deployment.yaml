@@ -1,0 +1,61 @@
+{{- if .Values.blackboxExporter.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "blackbox-probes.fullname" . }}-bbx
+  namespace: {{ .Values.blackboxExporter.namespace | quote }}
+  labels:
+    app.kubernetes.io/part-of: blackbox-probes
+    {{- range $k, $v := .Values.blackboxExporter.serviceSelectorLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "blackbox-probes.fullname" . }}-bbx
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ include "blackbox-probes.fullname" . }}-bbx
+        app.kubernetes.io/part-of: blackbox-probes
+        {{- range $k, $v := .Values.blackboxExporter.serviceSelectorLabels }}
+        {{ $k }}: {{ $v | quote }}
+        {{- end }}
+    spec:
+      securityContext:
+{{- toYaml .Values.blackboxExporter.podSecurityContext | nindent 8 }}
+      containers:
+        - name: blackbox-exporter
+          image: "{{ .Values.blackboxExporter.image.repository }}:{{ .Values.blackboxExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.blackboxExporter.image.pullPolicy }}
+          args: ["--config.file=/etc/blackbox/blackbox.yaml"]
+          ports:
+            - name: {{ .Values.blackboxExporter.service.portName }}
+              containerPort: {{ .Values.blackboxExporter.service.port }}
+          readinessProbe:
+            httpGet: { path: /, port: {{ .Values.blackboxExporter.service.portName }} }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: {{ .Values.blackboxExporter.service.portName }} }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+{{- toYaml .Values.blackboxExporter.securityContext | nindent 12 }}
+          resources:
+{{- toYaml .Values.blackboxExporter.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/blackbox
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "blackbox-probes.fullname" . }}-bbx-config
+      nodeSelector:
+{{- toYaml .Values.blackboxExporter.nodeSelector | nindent 8 }}
+      tolerations:
+{{- toYaml .Values.blackboxExporter.tolerations | nindent 8 }}
+      affinity:
+{{- toYaml .Values.blackboxExporter.affinity | nindent 8 }}
+{{- end }}

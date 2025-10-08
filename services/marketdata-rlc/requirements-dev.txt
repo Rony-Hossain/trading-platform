@@ -1,0 +1,9 @@
+pytest==8.3.3
+pytest-asyncio==0.23.8
+testcontainers==4.8.2
+psycopg2-binary==2.9.9
+lightgbm==4.5.0
+onnxmltools==1.13.0
+onnx==1.16.2
+scikit-learn==1.5.2
+onnxconverter-common==1.14.0

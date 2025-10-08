@@ -1,0 +1,3 @@
+env:
+  MODE: enforced
+replicaCount: 3

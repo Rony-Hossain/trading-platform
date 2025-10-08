@@ -1,0 +1,33 @@
+{{- $bb := .Values.blackboxExporter -}}
+{{- $defs := .Values.defaults -}}
+{{- $svcHost := printf "%s.%s.svc:%d" $bb.service.name $bb.namespace $bb.service.port -}}
+{{- $exporterAddr := (default $svcHost $bb.serviceAddress) -}}
+{{- range .Values.providers }}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "blackbox-probes.fullname" $ }}-test-{{ include "blackbox-probes.slug" .name }}
+  namespace: {{ $bb.namespace | quote }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded,hook-failed
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: curlimages/curl:8.8.0
+      imagePullPolicy: IfNotPresent
+      args:
+        - /bin/sh
+        - -c
+        - >
+          set -euo pipefail;
+          echo "Probing provider={{ .name }} target={{ .url }} via {{ $exporterAddr }}";
+          OUT="$(curl -sfS --max-time 15 \"http://{{ $exporterAddr }}/probe?module={{ default $defs.module .module }}&target={{ .url }}\")";
+          echo "$OUT";
+          echo "$OUT" | grep -qE '^probe_success\s+1(\.0+)?$' && echo "probe_success OK" || (echo "probe_success != 1" && exit 1);
+      resources:
+        requests: { cpu: "5m", memory: "16Mi" }
+        limits: { cpu: "100m", memory: "64Mi" }
+{{- end }}

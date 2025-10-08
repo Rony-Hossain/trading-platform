@@ -1,0 +1,20 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "marketdata-rlc.fullname" . }}
+  labels:
+    release: {{ .Values.serviceMonitor.releaseLabel | default "kube-prometheus-stack" }}
+spec:
+  namespaceSelector:
+    matchNames: [ {{ .Release.Namespace | quote }} ]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "marketdata-rlc.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - path: /metrics
+      port: http
+      interval: {{ .Values.serviceMonitor.interval | default "15s" }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout | default "10s" }}
+{{- end }}

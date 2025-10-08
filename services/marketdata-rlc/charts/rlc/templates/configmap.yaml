@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "marketdata-rlc.fullname" . }}-env
+data:
+  APP_NAME: {{ .Values.env.APP_NAME | quote }}
+  ENV: {{ .Values.env.ENV | quote }}
+  MODE: {{ .Values.env.MODE | quote }}
+  KAFKA_BOOTSTRAP: {{ .Values.env.KAFKA_BOOTSTRAP | quote }}
+  KAFKA_TOPIC_UPDATES: {{ .Values.env.KAFKA_TOPIC_UPDATES | quote }}
+  KAFKA_TOPIC_SHADOW: {{ .Values.env.KAFKA_TOPIC_SHADOW | quote }}
+  MODEL_PATH: {{ .Values.env.MODEL_PATH | quote }}
+  ERROR_MODEL_PATH: {{ .Values.env.ERROR_MODEL_PATH | quote }}
+  PG_DSN: {{ .Values.env.PG_DSN | quote }}
+  PROMETHEUS_ENABLED: {{ .Values.env.PROMETHEUS_ENABLED | quote }}
+  PROVIDERS: {{ .Values.env.PROVIDERS | quote }}

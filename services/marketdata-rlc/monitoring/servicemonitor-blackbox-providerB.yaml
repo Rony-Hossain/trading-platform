@@ -1,0 +1,26 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: blackbox-providerb
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames: ["monitoring"]
+  selector:
+    matchLabels:
+      app: blackbox-exporter
+  endpoints:
+    - path: /probe
+      port: http
+      interval: 30s
+      scrapeTimeout: 15s
+      params:
+        module: [http_2xx]
+        target: ["https://api.providerb.com/v1/health"]
+      relabelings:
+        - sourceLabels: [__param_target]
+          targetLabel: instance
+        - targetLabel: __address__
+          replacement: blackbox-exporter.monitoring.svc:9115

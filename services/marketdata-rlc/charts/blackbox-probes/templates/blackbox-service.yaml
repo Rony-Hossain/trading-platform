@@ -1,0 +1,20 @@
+{{- if .Values.blackboxExporter.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.blackboxExporter.service.name }}
+  namespace: {{ .Values.blackboxExporter.namespace | quote }}
+  labels:
+    app.kubernetes.io/part-of: blackbox-probes
+    {{- range $k, $v := .Values.blackboxExporter.serviceSelectorLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  type: {{ .Values.blackboxExporter.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "blackbox-probes.fullname" . }}-bbx
+  ports:
+    - name: {{ .Values.blackboxExporter.service.portName }}
+      port: {{ .Values.blackboxExporter.service.port }}
+      targetPort: {{ .Values.blackboxExporter.service.portName }}
+{{- end }}

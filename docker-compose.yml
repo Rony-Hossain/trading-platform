@@ -48,6 +48,44 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes
 
+  redpanda:
+    image: docker.redpanda.com/vectorized/redpanda:v24.1.11
+    command:
+      [
+        "redpanda",
+        "start",
+        "--smp",
+        "1",
+        "--overprovisioned",
+        "--node-id",
+        "0",
+        "--check=false",
+        "--reserve-memory",
+        "0M",
+        "--kafka-addr",
+        "PLAINTEXT://0.0.0.0:9092",
+        "--advertise-kafka-addr",
+        "PLAINTEXT://redpanda:9092",
+        "--pandaproxy-addr",
+        "0.0.0.0:8082",
+        "--advertise-pandaproxy-addr",
+        "redpanda:8082",
+        "--schema-registry-addr",
+        "0.0.0.0:8081",
+        "--advertise-schema-registry-addr",
+        "redpanda:8081"
+      ]
+    ports:
+      - "9092:9092"
+      - "8081:8081"
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "info"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   market-data-api:
     build: ./services/market-data-service
     ports:
@@ -152,6 +190,29 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  marketdata-rlc:
+    build: ./services/marketdata-rlc
+    ports:
+      - "8084:8080"
+    environment:
+      APP_NAME: marketdata-rlc
+      MODE: shadow
+      KAFKA_BOOTSTRAP: redpanda:9092
+      KAFKA_TOPIC_UPDATES: policy.updates
+      KAFKA_TOPIC_SHADOW: policy.shadow
+      PG_DSN: postgresql://trading_user:trading_pass@postgres:5432/trading_db
+      PROVIDERS: providerA,providerB
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   signal-service:
     build: ./services/signal-service

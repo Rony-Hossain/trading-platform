@@ -1,0 +1,17 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: marketdata-rlc
+  labels:
+    release: kube-prometheus-stack
+spec:
+  namespaceSelector:
+    matchNames: ["default"]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: marketdata-rlc
+  endpoints:
+    - path: /metrics
+      port: http
+      interval: 15s
+      scrapeTimeout: 10s

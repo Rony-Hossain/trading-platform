@@ -1,0 +1,20 @@
+{{- if .Values.blackboxExporter.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "blackbox-probes.fullname" . }}-bbx-config
+  namespace: {{ .Values.blackboxExporter.namespace | quote }}
+data:
+  blackbox.yaml: |
+{{- if .Values.blackboxExporter.config }}
+{{- .Values.blackboxExporter.config | nindent 4 }}
+{{- else }}
+    modules:
+      http_2xx:
+        prober: http
+        timeout: 10s
+        http:
+          method: GET
+          preferred_ip_protocol: "ip4"
+{{- end }}
+{{- end }}

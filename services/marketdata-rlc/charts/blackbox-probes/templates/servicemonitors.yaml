@@ -1,0 +1,35 @@
+{{- $fullname := include "blackbox-probes.fullname" . -}}
+{{- $rel := .Values.releaseLabel | default "kube-prometheus-stack" -}}
+{{- $defs := .Values.defaults -}}
+{{- $bb := .Values.blackboxExporter -}}
+{{- range .Values.providers }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ printf "%s-%s" $fullname (include "blackbox-probes.slug" .name) | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $bb.namespace | quote }}
+  labels:
+    release: {{ $rel }}
+    app.kubernetes.io/part-of: blackbox-probes
+    blackbox-provider: {{ include "blackbox-probes.slug" .name | quote }}
+spec:
+  namespaceSelector:
+    matchNames: [ {{ $bb.namespace | quote }} ]
+  selector:
+    matchLabels:
+{{ toYaml $bb.serviceSelectorLabels | indent 6 }}
+  endpoints:
+    - path: /probe
+      port: {{ $bb.service.portName | quote }}
+      interval: {{ .interval | default $defs.interval | quote }}
+      scrapeTimeout: {{ .scrapeTimeout | default $defs.scrapeTimeout | quote }}
+      params:
+        module: [ {{ .module | default $defs.module | quote }} ]
+        target: [ {{ .url | quote }} ]
+      relabelings:
+        - sourceLabels: [__param_target]
+          targetLabel: instance
+        - targetLabel: __address__
+          replacement: {{ (default (printf "%s.%s.svc:%d" $bb.service.name $bb.namespace $bb.service.port) $bb.serviceAddress) | quote }}
+{{- end }}
