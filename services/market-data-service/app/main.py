@@ -1,15 +1,18 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+import contextlib
 import json
 import logging
 import os
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 from .services import MarketDataService
+from .services.options_service import OptionContract, OptionsChain, options_service
 
 # Load environment variables
 load_dotenv()
@@ -171,6 +174,279 @@ async def websocket_endpoint(websocket: WebSocket, symbol: str):
     finally:
         market_service.connection_manager.disconnect(websocket)
 
+
+def _find_contract(contracts: List[OptionContract], target_symbol: Optional[str]) -> Optional[OptionContract]:
+    if not target_symbol:
+        return None
+    for contract in contracts:
+        if contract.symbol == target_symbol:
+            return contract
+    return None
+
+
+async def _options_chain_payload(symbol: str) -> Tuple[Dict[str, Any], OptionsChain]:
+    """Fetch the latest options chain and return a summary payload."""
+    chain = await options_service.fetch_options_chain(symbol)
+    total_calls = len(chain.calls)
+    total_puts = len(chain.puts)
+    expiries = [exp.isoformat() for exp in chain.expiries]
+
+    return {
+        "type": "options_chain",
+        "symbol": symbol,
+        "underlying_price": chain.underlying_price,
+        "timestamp": datetime.now().isoformat(),
+        "calls": total_calls,
+        "puts": total_puts,
+        "expiries": expiries,
+    }, chain
+
+
+def _options_update_payload(symbol: str, chain: OptionsChain, metrics) -> Dict[str, Any]:
+    """Build a payload for incremental options metrics updates."""
+    call_volume = metrics.call_volume or 0
+    put_volume = metrics.put_volume or 0
+    total_volume = call_volume + put_volume
+    volume_ratio = (call_volume / put_volume) if put_volume else None
+    iv_rank = metrics.metadata.get("iv_rank")
+
+    atm_call_symbol = metrics.metadata.get("atm_call")
+    atm_put_symbol = metrics.metadata.get("atm_put")
+    atm_call = _find_contract(chain.calls, atm_call_symbol)
+    atm_put = _find_contract(chain.puts, atm_put_symbol)
+
+    if iv_rank is None and metrics.atm_iv is not None:
+        iv_rank = max(0.0, min(100.0, metrics.atm_iv * 100))
+
+    return {
+        "type": "options_update",
+        "symbol": symbol,
+        "underlying_price": chain.underlying_price,
+        "timestamp": datetime.now().isoformat(),
+        "iv_rank": iv_rank,
+        "atm_call_iv": (atm_call.implied_volatility if atm_call else metrics.atm_iv),
+        "atm_put_iv": (atm_put.implied_volatility if atm_put else metrics.atm_iv),
+        "volume_ratio": volume_ratio,
+        "total_volume": total_volume,
+    }
+
+
+async def _options_consumer(websocket: WebSocket):
+    """Listen for client messages to keep the WebSocket alive."""
+    try:
+        while True:
+            message = await websocket.receive_text()
+            if message.strip().lower() == "ping":
+                await websocket.send_text(json.dumps({"type": "pong", "timestamp": datetime.now().isoformat()}))
+    except WebSocketDisconnect:
+        raise
+    except Exception as exc:
+        logger.error("Options WebSocket consumer error: %s", exc)
+
+
+async def _options_producer(websocket: WebSocket, symbol: str, interval: int):
+    """Continuously push options updates to the client."""
+    try:
+        chain_payload, chain = await _options_chain_payload(symbol)
+    except Exception as exc:
+        logger.error("Error fetching initial options chain for %s: %s", symbol, exc)
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "options_error",
+                    "symbol": symbol,
+                    "timestamp": datetime.now().isoformat(),
+                    "error": "Failed to load options chain",
+                }
+            )
+        )
+        raise
+
+    await websocket.send_text(json.dumps(chain_payload))
+
+    async def send_update(current_chain: OptionsChain):
+        try:
+            metrics = options_service.calculate_chain_metrics(current_chain)
+            update = _options_update_payload(symbol, current_chain, metrics)
+            await websocket.send_text(json.dumps(update))
+        except Exception as exc:
+            logger.error("Error generating options update for %s: %s", symbol, exc)
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "options_error",
+                        "symbol": symbol,
+                        "timestamp": datetime.now().isoformat(),
+                        "error": "Failed to generate options update",
+                    }
+                )
+            )
+
+    # Send initial metrics right away
+    await send_update(chain)
+
+    refresh_interval = max(1, interval)
+    while True:
+        await asyncio.sleep(refresh_interval)
+        try:
+            chain = await options_service.fetch_options_chain(symbol)
+        except Exception as exc:
+            logger.error("Error refreshing options chain for %s: %s", symbol, exc)
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "options_error",
+                        "symbol": symbol,
+                        "timestamp": datetime.now().isoformat(),
+                        "error": "Failed to refresh options chain",
+                    }
+                )
+            )
+            continue
+
+        await send_update(chain)
+
+
+async def _handle_options_websocket(websocket: WebSocket, symbol: Optional[str]):
+    """Shared handler for options WebSocket connections with symbol from path or query."""
+    if not symbol:
+        symbol = websocket.query_params.get("symbol")
+    if not symbol:
+        await websocket.accept()
+        await websocket.send_text(json.dumps({"type": "error", "error": "symbol query parameter is required"}))
+        await websocket.close(code=4400)
+        return
+
+    symbol = symbol.upper()
+    await websocket.accept()
+
+    interval = getattr(market_service, "update_interval", 5)
+    consumer_task = asyncio.create_task(_options_consumer(websocket))
+    producer_task = asyncio.create_task(_options_producer(websocket, symbol, interval))
+
+    try:
+        done, pending = await asyncio.wait(
+            [consumer_task, producer_task],
+            return_when=asyncio.FIRST_EXCEPTION,
+        )
+        for task in done:
+            exc = task.exception()
+            if exc and not isinstance(exc, WebSocketDisconnect):
+                logger.error("Options WebSocket task error for %s: %s", symbol, exc)
+    except WebSocketDisconnect:
+        logger.info("Options WebSocket client disconnected for %s", symbol)
+    finally:
+        for task in (consumer_task, producer_task):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        with contextlib.suppress(Exception):
+            await websocket.close()
+
+
+@app.websocket("/ws/options")
+async def options_websocket_query(websocket: WebSocket):
+    """Options WebSocket endpoint using symbol query parameter."""
+    await _handle_options_websocket(websocket, None)
+
+
+@app.websocket("/ws/options/{symbol}")
+async def options_websocket_path(websocket: WebSocket, symbol: str):
+    """Options WebSocket endpoint with symbol in the path."""
+    await _handle_options_websocket(websocket, symbol)
+
+
+@app.get("/options/{symbol}/chain")
+async def get_options_chain(symbol: str):
+    """Return the full options chain for a symbol."""
+    try:
+        chain = await options_service.fetch_options_chain(symbol.upper())
+    except Exception as exc:
+        logger.error("Error fetching options chain for %s: %s", symbol, exc)
+        raise HTTPException(status_code=502, detail=f"Unable to fetch options chain for {symbol.upper()}") from exc
+
+    return jsonable_encoder(chain)
+
+
+def _validate_sentiment(sentiment: str, allowed: List[str]) -> str:
+    normalized = (sentiment or "all").lower()
+    if normalized not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid sentiment '{sentiment}'. Expected one of {', '.join(allowed)}.",
+        )
+    return normalized
+
+
+def _validate_complexity(complexity: str, allowed: List[str]) -> str:
+    normalized = (complexity or "all").lower()
+    if normalized not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid complexity '{complexity}'. Expected one of {', '.join(allowed)}.",
+        )
+    return normalized
+
+
+@app.get("/options/{symbol}/strategies")
+async def get_options_strategies(
+    symbol: str,
+    sentiment: str = Query("all", description="Filter by sentiment: bullish, bearish, neutral, or all"),
+    complexity: str = Query("all", description="Filter by complexity: beginner, intermediate, advanced, or all"),
+):
+    """Return advanced options strategies derived from the options chain."""
+    sentiment_normalized = _validate_sentiment(sentiment, ["bullish", "bearish", "neutral", "all"])
+    complexity_normalized = _validate_complexity(complexity, ["beginner", "intermediate", "advanced", "all"])
+
+    try:
+        strategies = await options_service.get_advanced_strategies(
+            symbol.upper(), sentiment=sentiment_normalized, complexity=complexity_normalized
+        )
+    except Exception as exc:
+        logger.error("Error generating strategies for %s: %s", symbol, exc)
+        raise HTTPException(status_code=502, detail=f"Unable to generate strategies for {symbol.upper()}") from exc
+
+    payload = {"symbol": symbol.upper(), "count": len(strategies), "strategies": strategies}
+    return jsonable_encoder(payload)
+
+
+@app.get("/options/{symbol}/suggestions")
+async def get_options_suggestions(
+    symbol: str,
+    sentiment: str = Query("bullish", description="Trading bias for suggestions"),
+    target_delta: float = Query(0.3, ge=0, le=1, description="Approximate option delta to target"),
+    max_dte: int = Query(7, ge=1, le=60, description="Maximum days to expiration"),
+    min_liquidity: float = Query(50, ge=0, le=100, description="Minimum liquidity score threshold"),
+):
+    """Return tailored day-trading suggestions built from the options chain."""
+    sentiment_normalized = _validate_sentiment(sentiment, ["bullish", "bearish", "neutral"])
+
+    try:
+        chain = await options_service.fetch_options_chain(symbol.upper())
+        suggestions = options_service.suggest_day_trade(
+            symbol.upper(),
+            sentiment_normalized,
+            chain.underlying_price,
+            target_delta=target_delta,
+            max_dte=max_dte,
+            min_liquidity=min_liquidity,
+        )
+    except Exception as exc:
+        logger.error("Error generating suggestions for %s: %s", symbol, exc)
+        raise HTTPException(status_code=502, detail=f"Unable to generate suggestions for {symbol.upper()}") from exc
+
+    if not suggestions:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No trade suggestions available for {symbol.upper()} with current filters",
+        )
+
+    payload = {
+        "symbol": symbol.upper(),
+        "underlying_price": chain.underlying_price,
+        "suggestions": suggestions,
+    }
+    return jsonable_encoder(payload)
 
 
 @app.get("/options/{symbol}/metrics")

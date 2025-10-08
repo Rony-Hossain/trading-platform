@@ -15,6 +15,16 @@ from ..core.config import settings
 logger = logging.getLogger(__name__)
 
 class MarketDataService:
+    SUPPORTED_INTRADAY_INTERVALS = {
+        "1m",
+        "2m",
+        "5m",
+        "15m",
+        "30m",
+        "60m",
+        "90m",
+    }
+
     def __init__(self):
         # Get Finnhub API key from environment (via settings/env)
         finnhub_api_key = os.getenv("FINNHUB_API_KEY") or settings.finnhub_api_key
@@ -82,10 +92,62 @@ class MarketDataService:
             data = await provider.get_historical(symbol, period)
             if data:
                 return data
-        
+    
         raise HTTPException(
             status_code=503,
             detail=f"Unable to fetch historical data for {symbol}"
+        )
+
+    def _normalize_intraday_interval(self, interval: str) -> str:
+        interval_normalized = (interval or "1m").strip().lower()
+
+        # Map common aliases to supported values
+        alias_map = {
+            "1": "1m",
+            "5": "5m",
+            "15": "15m",
+            "30": "30m",
+            "60": "60m",
+            "1min": "1m",
+            "5min": "5m",
+            "15min": "15m",
+            "30min": "30m",
+            "60min": "60m",
+            "1hour": "60m",
+            "1hr": "60m",
+            "1h": "60m",
+        }
+
+        resolved = alias_map.get(interval_normalized, interval_normalized)
+        if resolved not in self.SUPPORTED_INTRADAY_INTERVALS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unsupported intraday interval '{interval}'"
+            )
+        return resolved
+
+    async def get_intraday_data(self, symbol: str, interval: str = "1m") -> Dict:
+        """Get intraday data with provider fallback and validation."""
+        normalized_interval = self._normalize_intraday_interval(interval)
+
+        errors: List[str] = []
+        for provider in self.providers:
+            try:
+                data = await provider.get_intraday_safe(symbol, normalized_interval)
+                if data:
+                    return data
+                errors.append(f"{provider.name}: no data returned")
+            except HTTPException:
+                raise
+            except Exception as exc:
+                error_message = f"{provider.name}: {exc}"
+                errors.append(error_message)
+                logger.error("Intraday provider error for %s: %s", symbol, error_message)
+
+        error_detail = "; ".join(errors) if errors else "No provider returned intraday data"
+        raise HTTPException(
+            status_code=503,
+            detail=f"Unable to fetch intraday data for {symbol}: {error_detail}"
         )
     
     async def start_background_tasks(self):

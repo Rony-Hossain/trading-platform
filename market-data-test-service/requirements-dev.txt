@@ -1,0 +1,6 @@
+-r requirements.txt
+black>=23.12
+isort>=5.12
+ruff>=0.1.14
+pre-commit>=3.5
+pytest-xdist>=3.3

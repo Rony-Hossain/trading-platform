@@ -1,0 +1,45 @@
+{
+  "expectation_suite_name": "market_data_history_suite",
+  "meta": {
+    "created": "2025-10-07T00:00:00Z",
+    "description": "OHLCV integrity checks for history payloads."
+  },
+  "expectations": [
+    {
+      "expectation_type": "expect_column_values_to_not_be_null",
+      "kwargs": { "column": "timestamp" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_unique",
+      "kwargs": { "column": "timestamp" }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_greater_than",
+      "kwargs": { "column": "open", "value": 0 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_greater_than",
+      "kwargs": { "column": "high", "value": 0 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_greater_than",
+      "kwargs": { "column": "low", "value": 0 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_greater_than",
+      "kwargs": { "column": "close", "value": 0 }
+    },
+    {
+      "expectation_type": "expect_column_values_to_be_greater_than_or_equal_to",
+      "kwargs": { "column": "volume", "value": 0 }
+    },
+    {
+      "expectation_type": "expect_column_pair_values_A_to_be_less_than_or_equal_to_B",
+      "kwargs": { "column_A": "open", "column_B": "high" }
+    },
+    {
+      "expectation_type": "expect_column_pair_values_A_to_be_less_than_or_equal_to_B",
+      "kwargs": { "column_A": "low", "column_B": "close" }
+    }
+  ]
+}

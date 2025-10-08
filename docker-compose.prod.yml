@@ -181,6 +181,8 @@ services:
     environment:
       - NEXT_PUBLIC_MARKET_DATA_API=https://api.yourdomain.com/market-data
       - NEXT_PUBLIC_ANALYSIS_API=https://api.yourdomain.com/analysis
+      - NEXT_PUBLIC_MARKET_DATA_WS_URL=wss://api.yourdomain.com/market-data/ws
+      - MARKET_DATA_INTERNAL_URL=http://market-data-api:8002
       - NODE_ENV=production
     networks:
       - frontend
