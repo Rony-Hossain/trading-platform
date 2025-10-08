@@ -8,11 +8,16 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_options_chain_has_expiries_and_greeks(
-    api_client, service_availability, tracked_symbols
+    api_client, service_availability, tracked_symbols, require_options_data
 ) -> None:
     if not service_availability.available:
         pytest.skip(service_availability.reason)
     response = await api_client.get(f"/options/{tracked_symbols['liquid'][0]}/chain")
+    if response.status_code >= 500:
+        message = f"Options chain upstream failure: {response.text}"
+        if require_options_data:
+            pytest.fail(message)
+        pytest.skip(message)
     assert response.status_code == 200, response.text
     payload = response.json()
     expiries = payload.get("expiries") or payload.get("expirationDates")

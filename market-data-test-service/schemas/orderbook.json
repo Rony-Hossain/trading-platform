@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["symbol", "bids", "asks"],
+  "properties": {
+    "symbol": { "type": "string" },
+    "bids": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": [
+          { "type": "number" },
+          { "type": "number" }
+        ],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    },
+    "asks": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": [
+          { "type": "number" },
+          { "type": "number" }
+        ],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    }
+  },
+  "additionalProperties": true
+}

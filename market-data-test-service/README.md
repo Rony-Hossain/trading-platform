@@ -36,6 +36,13 @@ Load via `.env` or CI secrets:
 - `REDIS_URL` (`redis://localhost:6379/0`)
 - `LIVE_TESTS=1` to force tests even if `/health` fails.
 - `ENABLE_PROVIDER_MOCKS=1` to run fallback simulations with mocks.
+- `REQUIRE_OPTIONAL_ENDPOINTS=1` to fail the suite when optional endpoints (e.g. `/admin/stats`, coverage) are missing.
+- `REQUIRE_DEEP_HISTORY=1` to fail history tests if fewer than 200 candles are returned for the 1y daily range.
+- `REQUIRE_STRICT_VALIDATION=1` to fail when invalid parameter combinations return 200 instead of 4xx.
+- `REQUIRE_OPTIONS_DATA=1` to fail when options chain/suggestions return upstream 5xx errors.
+- `ENABLE_RATE_TESTS=1` to run aggressive rate-limit scenarios (default is skipped).
+- `RATE_LIMIT_REQUEST_COUNT` to tune the number of requests for rate tests (default 200).
+- `WS_RECEIVE_TIMEOUT`, `WS_RECONNECT_TIMEOUT` to adjust WebSocket timing expectations.
 
 ## VizTracer & Profiling
 

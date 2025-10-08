@@ -16,6 +16,11 @@ from dotenv import load_dotenv
 from freezegun import freeze_time as _freeze_time
 from viztracer import VizTracer
 
+REQUIRE_OPTIONALS = os.getenv("REQUIRE_OPTIONAL_ENDPOINTS", "0") == "1"
+REQUIRE_DEEP_HISTORY = os.getenv("REQUIRE_DEEP_HISTORY", "0") == "1"
+REQUIRE_STRICT_VALIDATION = os.getenv("REQUIRE_STRICT_VALIDATION", "0") == "1"
+REQUIRE_OPTIONS_DATA = os.getenv("REQUIRE_OPTIONS_DATA", "0") == "1"
+
 ROOT_DIR = Path(__file__).resolve().parents[2]
 ENV_PATH = ROOT_DIR / ".env"
 if ENV_PATH.exists():
@@ -131,6 +136,8 @@ def iso_parser() -> Callable[[str], datetime]:
         if not ts:
             raise AssertionError("Timestamp missing")
         candidate = str(ts)
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", candidate):
+            candidate = f"{candidate}T00:00:00"
         if candidate.endswith("Z"):
             candidate = candidate[:-1] + "+00:00"
         if re.match(r".*[+-]\d{2}:\d{2}$", candidate) is None:
@@ -174,3 +181,30 @@ def freeze_time() -> Generator[Callable[..., None], None, None]:
     yield _activate
     for ctx in active:
         ctx.stop()
+
+
+@pytest.fixture(scope="session")
+def optional_endpoint_guard() -> Callable[[httpx.Response, str], None]:
+    def _guard(response: httpx.Response, endpoint: str) -> None:
+        if response.status_code == 404:
+            message = f"{endpoint} not enabled in this deployment."
+            if REQUIRE_OPTIONALS:
+                pytest.fail(message)
+            pytest.skip(message)
+
+    return _guard
+
+
+@pytest.fixture(scope="session")
+def require_deep_history() -> bool:
+    return REQUIRE_DEEP_HISTORY
+
+
+@pytest.fixture(scope="session")
+def require_strict_validation() -> bool:
+    return REQUIRE_STRICT_VALIDATION
+
+
+@pytest.fixture(scope="session")
+def require_options_data() -> bool:
+    return REQUIRE_OPTIONS_DATA

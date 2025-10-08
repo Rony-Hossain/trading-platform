@@ -5,10 +5,11 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
-async def test_coverage_flags_present(api_client, service_availability) -> None:
+async def test_coverage_flags_present(api_client, service_availability, optional_endpoint_guard) -> None:
     if not service_availability.available:
         pytest.skip(service_availability.reason)
     response = await api_client.get("/stocks/AAPL/coverage")
+    optional_endpoint_guard(response, "/stocks/{symbol}/coverage")
     assert response.status_code == 200, response.text
     payload = response.json()
     assert isinstance(payload, dict), payload

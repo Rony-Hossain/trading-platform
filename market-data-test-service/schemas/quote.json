@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["symbol", "price", "ts"],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "price": {
+      "type": "number"
+    },
+    "ts": {
+      "type": "string"
+    },
+    "venue": {
+      "type": "string"
+    },
+    "currency": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": true
+}
