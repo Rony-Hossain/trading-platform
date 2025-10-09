@@ -13,6 +13,7 @@ from ..providers import FinnhubProvider, YahooFinanceProvider
 from ..providers.registry import ProviderRegistry
 from .cache import DataCache
 from .database import db_service
+from .data_collector import DataCollectorService
 from .macro_data_service import MacroFactorService
 from .options_service import options_service
 from .websocket import ConnectionManager
@@ -50,6 +51,7 @@ class MarketDataService:
             cache_ttl_seconds=getattr(self.settings, "macro_cache_ttl_seconds", 300),
             refresh_interval_seconds=getattr(self.settings, "macro_refresh_interval_seconds", 900),
         )
+        self.data_collector = DataCollectorService(db=db_service, registry=self.registry)
         self.background_tasks_running = False
 
     def _init_providers(self) -> None:
@@ -230,7 +232,10 @@ class MarketDataService:
         # Start real-time data broadcasting
         asyncio.create_task(self._real_time_broadcast_task())
 
-        logger.info("Background tasks started")
+        # Start data collector (M2/M3: RLC consumer + gap detection + backfill)
+        asyncio.create_task(self.data_collector.run())
+
+        logger.info("Background tasks started (including data collector)")
     
     async def _cache_cleanup_task(self):
         """Clean up expired cache entries"""

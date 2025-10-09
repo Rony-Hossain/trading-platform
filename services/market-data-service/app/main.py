@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     market_service.background_tasks_running = False
+    await market_service.data_collector.stop()
     logger.info("Market Data Service stopped")
 
 app = FastAPI(
@@ -151,6 +152,56 @@ async def stats_providers():
         "registered_capabilities": registry.capabilities_map(),
         "providers": providers,
     }
+
+
+@app.get("/stats/cadence")
+async def stats_cadence():
+    """Return universe tiering and cadence policy."""
+    settings = get_settings()
+    return {
+        "tiers": {"max": settings.TIER_MAXS},
+        "cadence": {
+            "T0": settings.CADENCE_T0,
+            "T1": settings.CADENCE_T1,
+            "T2": settings.CADENCE_T2,
+        },
+        "use_rlc": settings.USE_RLC,
+        "local_sweep": settings.LOCAL_SWEEP_ENABLED,
+        "policy_version": settings.policy_version,
+    }
+
+
+@app.get("/ops/cursor/{symbol}/{interval}/{source}")
+async def read_cursor(symbol: str, interval: str, source: str):
+    """Read ingestion cursor for a symbol/interval/source."""
+    from .services.database import db_service
+    ts = await db_service.get_cursor(symbol, interval, source)
+    return {
+        "symbol": symbol,
+        "interval": interval,
+        "source": source,
+        "last_ts": ts.isoformat() + "Z" if ts else None,
+    }
+
+
+@app.post("/ops/backfill")
+async def trigger_backfill(payload: dict):
+    """
+    Manually trigger a backfill.
+    Payload: {symbol, interval, start, end, priority}
+    """
+    from .services.database import db_service
+    req = {**payload}
+    try:
+        start = datetime.fromisoformat(req["start"].replace("Z", ""))
+        end = datetime.fromisoformat(req["end"].replace("Z", ""))
+    except Exception:
+        raise HTTPException(400, "Invalid start/end ISO8601")
+
+    await db_service.enqueue_backfill(
+        req["symbol"], req.get("interval", "1m"), start, end, req.get("priority", "T2")
+    )
+    return {"enqueued": True}
 
 @app.get("/factors/macro")
 async def get_macro_factors(factors: Optional[List[str]] = Query(None)):

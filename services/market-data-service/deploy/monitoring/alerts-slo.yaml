@@ -1,0 +1,166 @@
+# Prometheus Alert Rules for Market Data Service SLOs
+# Apply with: kubectl apply -f alerts-slo.yaml
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: market-data-slo-alerts
+  namespace: monitoring
+  labels:
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    - name: market-data-slo
+      interval: 30s
+      rules:
+        # SLO: Gap ≤ 2× interval for T0 symbols
+        - alert: SLOGapViolationHighT0
+          expr: slo_gap_violation_rate{tier="T0",interval="1m"} > 0.005
+          for: 5m
+          labels:
+            severity: warning
+            service: market-data
+            slo: continuity
+          annotations:
+            summary: "T0 gap violation rate exceeds 0.5%"
+            description: "T0 symbols have {{ $value | humanizePercentage }} gap violation rate (target: <0.5%)"
+            runbook_url: "https://docs.example.com/runbooks/market-data/gap-violations"
+            dashboard_url: "https://grafana.example.com/d/market-data-ingestion"
+
+        # SLO: Backfill drain time < 10× outage
+        - alert: BackfillOldestTooOldT0
+          expr: backfill_oldest_age_seconds{tier="T0"} > 900
+          for: 10m
+          labels:
+            severity: warning
+            service: market-data
+            slo: backfill_drain
+          annotations:
+            summary: "T0 backfill oldest job exceeds 15 minutes"
+            description: "Oldest T0 backfill job is {{ $value | humanizeDuration }} old (target: <15m)"
+            runbook_url: "https://docs.example.com/runbooks/market-data/backfill-slow"
+            dashboard_url: "https://grafana.example.com/d/market-data-backfill"
+
+        # SLO: WebSocket publish latency p99 < 250ms
+        - alert: WSPublishLatencyHigh
+          expr: histogram_quantile(0.99, sum by (le) (rate(ws_publish_latency_ms_bucket[5m]))) > 250
+          for: 5m
+          labels:
+            severity: warning
+            service: market-data
+            slo: latency
+          annotations:
+            summary: "WebSocket publish p99 latency > 250ms"
+            description: "WS publish p99 latency is {{ $value }}ms (target: <250ms)"
+            runbook_url: "https://docs.example.com/runbooks/market-data/ws-latency"
+            dashboard_url: "https://grafana.example.com/d/market-data-websocket"
+
+        # Provider health degradation
+        - alert: ProviderErrorSpike
+          expr: sum by (provider) (rate(provider_errors_total[5m])) > 5
+          for: 10m
+          labels:
+            severity: warning
+            service: market-data
+            component: provider
+          annotations:
+            summary: "Provider {{ $labels.provider }} error rate spike"
+            description: "Provider {{ $labels.provider }} has {{ $value }} errors/sec (5m avg)"
+            runbook_url: "https://docs.example.com/runbooks/market-data/provider-errors"
+            dashboard_url: "https://grafana.example.com/d/market-data-providers"
+
+        # No WebSocket clients during market hours
+        - alert: NoWSClientsDuringRTH
+          expr: ws_clients_gauge == 0 and on() (hour() >= 13 and hour() < 20 and day_of_week() > 0 and day_of_week() < 6)
+          for: 10m
+          labels:
+            severity: warning
+            service: market-data
+            component: websocket
+          annotations:
+            summary: "No WebSocket clients during market hours"
+            description: "Zero WS clients connected during regular trading hours"
+            runbook_url: "https://docs.example.com/runbooks/market-data/no-ws-clients"
+            dashboard_url: "https://grafana.example.com/d/market-data-websocket"
+
+        # Backfill queue depth too high
+        - alert: BackfillQueueDepthHigh
+          expr: backfill_queue_depth > 10000
+          for: 15m
+          labels:
+            severity: warning
+            service: market-data
+            component: backfill
+          annotations:
+            summary: "Backfill queue depth exceeds 10k jobs"
+            description: "Backfill queue has {{ $value }} jobs (threshold: 10k)"
+            runbook_url: "https://docs.example.com/runbooks/market-data/backfill-queue-high"
+            dashboard_url: "https://grafana.example.com/d/market-data-backfill"
+
+        # Circuit breaker open
+        - alert: ProviderCircuitBreakerOpen
+          expr: circuit_state{provider!=""} == 0
+          for: 5m
+          labels:
+            severity: warning
+            service: market-data
+            component: circuit-breaker
+          annotations:
+            summary: "Circuit breaker OPEN for {{ $labels.provider }}"
+            description: "Provider {{ $labels.provider }} circuit breaker is OPEN"
+            runbook_url: "https://docs.example.com/runbooks/market-data/circuit-breaker"
+            dashboard_url: "https://grafana.example.com/d/market-data-providers"
+
+        # Database write latency high
+        - alert: DBWriteLatencyHigh
+          expr: histogram_quantile(0.95, sum by (le) (rate(write_batch_ms_bucket[5m]))) > 1000
+          for: 10m
+          labels:
+            severity: warning
+            service: market-data
+            component: database
+          annotations:
+            summary: "Database write p95 latency > 1s"
+            description: "DB write p95 latency is {{ $value }}ms (threshold: 1000ms)"
+            runbook_url: "https://docs.example.com/runbooks/market-data/db-latency"
+            dashboard_url: "https://grafana.example.com/d/market-data-database"
+
+        # Ingestion lag too high
+        - alert: IngestionLagHigh
+          expr: ingestion_lag_seconds{interval="1m"} > 300
+          for: 5m
+          labels:
+            severity: warning
+            service: market-data
+            slo: continuity
+          annotations:
+            summary: "Ingestion lag > 5 minutes for 1m bars"
+            description: "1m bar ingestion is {{ $value | humanizeDuration }} behind real-time"
+            runbook_url: "https://docs.example.com/runbooks/market-data/ingestion-lag"
+            dashboard_url: "https://grafana.example.com/d/market-data-ingestion"
+
+        # Service down
+        - alert: MarketDataServiceDown
+          expr: up{job="market-data-service"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: market-data
+          annotations:
+            summary: "Market Data Service is DOWN"
+            description: "Market Data Service has been unreachable for 2 minutes"
+            runbook_url: "https://docs.example.com/runbooks/market-data/service-down"
+            dashboard_url: "https://grafana.example.com/d/market-data-overview"
+
+        # Health endpoint failing
+        - alert: HealthEndpointFailing
+          expr: probe_success{probe_type="health_check",service="market-data"} == 0
+          for: 3m
+          labels:
+            severity: critical
+            service: market-data
+          annotations:
+            summary: "Market Data Service health check failing"
+            description: "/health endpoint has been failing for 3 minutes"
+            runbook_url: "https://docs.example.com/runbooks/market-data/health-failing"
+            dashboard_url: "https://grafana.example.com/d/market-data-overview"

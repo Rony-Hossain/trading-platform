@@ -1,0 +1,27 @@
+# ServiceMonitor for Prometheus Operator
+# Automatically discovers and scrapes market-data-service metrics
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: market-data-service
+  namespace: monitoring
+  labels:
+    app: market-data-service
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - trading
+  selector:
+    matchLabels:
+      app: market-data-service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      scrapeTimeout: 10s
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node

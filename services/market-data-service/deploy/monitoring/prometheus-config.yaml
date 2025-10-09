@@ -1,0 +1,69 @@
+# Prometheus Scrape Configuration for Market Data Service
+# Add these to your prometheus.yml scrape_configs section
+
+scrape_configs:
+  # Direct metrics scraping from the service
+  - job_name: 'market-data-service'
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    static_configs:
+      - targets:
+          - market-data-service.trading.svc.cluster.local:8001
+        labels:
+          service: market-data
+          environment: production
+
+  # Blackbox probing - HTTP health check
+  - job_name: 'blackbox-http-market-data-health'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://market-data-service.trading.svc.cluster.local:8001/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+      - target_label: probe_type
+        replacement: health_check
+
+  # Blackbox probing - Metrics endpoint availability
+  - job_name: 'blackbox-http-market-data-metrics'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - http://market-data-service.trading.svc.cluster.local:8001/metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+      - target_label: probe_type
+        replacement: metrics_endpoint
+
+  # Blackbox probing - WebSocket handshake
+  - job_name: 'blackbox-ws-market-data'
+    metrics_path: /probe
+    params:
+      module: [ws_handshake]
+    static_configs:
+      - targets:
+          - ws://market-data-service.trading.svc.cluster.local:8001/ws/AAPL
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+      - target_label: probe_type
+        replacement: websocket

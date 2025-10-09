@@ -1,0 +1,74 @@
+# ServiceMonitor for Blackbox Exporter probes
+# Monitors health endpoints and WebSocket availability
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: blackbox-market-data
+  namespace: monitoring
+  labels:
+    app: blackbox-exporter
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: blackbox-exporter
+  endpoints:
+    # Probe /health endpoint
+    - port: http
+      path: /probe
+      interval: 30s
+      scrapeTimeout: 10s
+      params:
+        module: [http_2xx]
+        target: ["http://market-data-service.trading.svc.cluster.local:8001/health"]
+      relabelings:
+        - sourceLabels: [__address__]
+          targetLabel: __param_target
+        - sourceLabels: [__param_target]
+          targetLabel: instance
+        - targetLabel: __address__
+          replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+        - targetLabel: probe_type
+          replacement: health_check
+        - targetLabel: service
+          replacement: market-data
+
+    # Probe /metrics endpoint
+    - port: http
+      path: /probe
+      interval: 30s
+      scrapeTimeout: 10s
+      params:
+        module: [http_2xx]
+        target: ["http://market-data-service.trading.svc.cluster.local:8001/metrics"]
+      relabelings:
+        - sourceLabels: [__address__]
+          targetLabel: __param_target
+        - sourceLabels: [__param_target]
+          targetLabel: instance
+        - targetLabel: __address__
+          replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+        - targetLabel: probe_type
+          replacement: metrics_endpoint
+        - targetLabel: service
+          replacement: market-data
+
+    # Probe WebSocket endpoint
+    - port: http
+      path: /probe
+      interval: 30s
+      scrapeTimeout: 10s
+      params:
+        module: [ws_handshake]
+        target: ["ws://market-data-service.trading.svc.cluster.local:8001/ws/AAPL"]
+      relabelings:
+        - sourceLabels: [__address__]
+          targetLabel: __param_target
+        - sourceLabels: [__param_target]
+          targetLabel: instance
+        - targetLabel: __address__
+          replacement: blackbox-exporter.monitoring.svc.cluster.local:9115
+        - targetLabel: probe_type
+          replacement: websocket
+        - targetLabel: service
+          replacement: market-data

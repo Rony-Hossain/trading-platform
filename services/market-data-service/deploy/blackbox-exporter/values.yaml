@@ -1,0 +1,102 @@
+# Helm values for Blackbox Exporter
+# Chart: prometheus-community/prometheus-blackbox-exporter
+# Install: helm install blackbox prometheus-community/prometheus-blackbox-exporter -f values.yaml -n monitoring
+
+image:
+  repository: quay.io/prometheus/blackbox-exporter
+  tag: v0.25.0
+  pullPolicy: IfNotPresent
+
+replicas: 2
+
+resources:
+  limits:
+    cpu: 200m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+service:
+  type: ClusterIP
+  port: 9115
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9115"
+
+config:
+  modules:
+    # HTTP 2xx check
+    http_2xx:
+      prober: http
+      timeout: 5s
+      http:
+        method: GET
+        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+        valid_status_codes: [200]
+        follow_redirects: true
+        preferred_ip_protocol: "ip4"
+        ip_protocol_fallback: false
+
+    # HTTP POST check
+    http_post_2xx:
+      prober: http
+      timeout: 5s
+      http:
+        method: POST
+        valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+        valid_status_codes: [200, 201, 202]
+        preferred_ip_protocol: "ip4"
+
+    # WebSocket handshake check
+    ws_handshake:
+      prober: http
+      timeout: 5s
+      http:
+        method: GET
+        headers:
+          Connection: "Upgrade"
+          Upgrade: "websocket"
+          Sec-WebSocket-Version: "13"
+          Sec-WebSocket-Key: "x3JJHMbDL1EzLkh9GBhXDw=="
+        valid_status_codes: [101]
+        fail_if_not_ssl: false
+        preferred_ip_protocol: "ip4"
+
+    # TCP connection check
+    tcp_connect:
+      prober: tcp
+      timeout: 5s
+      tcp:
+        preferred_ip_protocol: "ip4"
+
+    # ICMP ping check
+    icmp:
+      prober: icmp
+      timeout: 5s
+      icmp:
+        preferred_ip_protocol: "ip4"
+
+serviceMonitor:
+  enabled: true
+  defaults:
+    labels:
+      release: prometheus
+    interval: 30s
+    scrapeTimeout: 10s
+
+podDisruptionBudget:
+  maxUnavailable: 1
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - prometheus-blackbox-exporter
+          topologyKey: kubernetes.io/hostname
