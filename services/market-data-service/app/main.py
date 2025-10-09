@@ -1,16 +1,19 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Query
-from fastapi.encoders import jsonable_encoder
-from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import contextlib
 import json
 import logging
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
+from fastapi.middleware.cors import CORSMiddleware
+from prometheus_client import make_asgi_app
 from dotenv import load_dotenv
 
+from .core.config import Settings, get_settings, hot_reload, validate_settings
 from .services import MarketDataService
 from .services.options_service import OptionContract, OptionsChain, options_service
 
@@ -41,6 +44,9 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,10 +58,13 @@ app.add_middleware(
 @app.get("/")
 async def root():
     stats = await market_service.get_stats()
+    settings = get_settings()
     return {
         "service": "Market Data Service",
         "status": "running",
         "timestamp": datetime.now().isoformat(),
+        "env": settings.env,
+        "policy_version": settings.policy_version,
         "stats": stats,
         "endpoints": {
             "stock_price": "/stocks/{symbol}/price",
@@ -78,16 +87,69 @@ async def root():
 @app.get("/health")
 async def health_check():
     stats = await market_service.get_stats()
+    settings = get_settings()
     return {
         "status": "healthy",
         "service": "market-data-service",
         "timestamp": datetime.now().isoformat(),
+        "env": settings.env,
+        "policy_version": settings.policy_version,
         "providers_status": {
             provider["name"]: provider["available"]
             for provider in stats["providers"]
         },
         "macro": stats.get("macro", {}),
         "options_metrics": stats.get("options_metrics", {})
+    }
+
+
+@app.post("/ops/validate")
+def ops_validate():
+    candidate = Settings()
+    ok, reason = validate_settings(candidate)
+    return {"ok": ok, "reason": reason, "policy_version": candidate.policy_version}
+
+
+@app.post("/ops/reload")
+async def ops_reload():
+    result = hot_reload()
+    if result.get("ok"):
+        market_service.reload_configuration()
+        result["policy_version"] = get_settings().policy_version
+    return result
+
+
+@app.get("/stats/providers")
+async def stats_providers():
+    registry = market_service.registry
+    breakers = market_service.breakers
+    settings = get_settings()
+
+    providers = []
+    for name, entry in registry.providers.items():
+        providers.append(
+            {
+                "provider": name,
+                "state": breakers.get_state(name),
+                "capabilities": sorted(entry.capabilities),
+                "latency_p95_ms": entry.stats.latency_p95_ms,
+                "error_ewma": entry.stats.error_ewma,
+                "completeness_deficit": entry.stats.completeness_deficit,
+                "health_score": registry.health_score(name),
+                "history": [{"t": t, "h": h} for (t, h) in entry.h_history],
+            }
+        )
+
+    return {
+        "policy_version": settings.policy_version,
+        "policy": {
+            "bars_1m": settings.POLICY_BARS_1M,
+            "eod": settings.POLICY_EOD,
+            "quotes_l1": settings.POLICY_QUOTES_L1,
+            "options_chain": settings.POLICY_OPTIONS_CHAIN,
+        },
+        "registered_capabilities": registry.capabilities_map(),
+        "providers": providers,
     }
 
 @app.get("/factors/macro")

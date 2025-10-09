@@ -1,12 +1,13 @@
-import asyncio
 import asyncpg
 import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from time import perf_counter
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from ..core.config import settings
+from ..core.config import get_settings, settings
+from ..observability.metrics import INGESTION_LAG, WRITE_BATCH_LATENCY
 
 logger = logging.getLogger(__name__)
 
@@ -53,49 +54,36 @@ class DatabaseService:
             return 0
 
         try:
-            async with self.get_connection() as conn:
-                records = []
-                for candle in candles:
-                    ts = self._coerce_timestamp(candle["timestamp"])
-                    records.append(
-                        (
-                            symbol.upper(),
-                            ts,
-                            float(candle["open"]),
-                            float(candle["high"]),
-                            float(candle["low"]),
-                            float(candle["close"]),
-                            int(candle["volume"]),
-                        )
-                    )
+            normalized = []
+            now = datetime.utcnow()
+            for candle in candles:
+                ts = self._coerce_timestamp(candle["timestamp"])
+                normalized.append(
+                    {
+                        "symbol": symbol.upper(),
+                        "ts": ts,
+                        "interval": "1d",
+                        "o": float(candle["open"]),
+                        "h": float(candle["high"]),
+                        "l": float(candle["low"]),
+                        "c": float(candle["close"]),
+                        "v": float(candle["volume"]),
+                        "status": "final",
+                        "as_of": now,
+                    }
+                )
 
-                query = """
-                    INSERT INTO candles (symbol, ts, open, high, low, close, volume)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (symbol, ts)
-                    DO UPDATE SET
-                        open = EXCLUDED.open,
-                        high = EXCLUDED.high,
-                        low = EXCLUDED.low,
-                        close = EXCLUDED.close,
-                        volume = EXCLUDED.volume
-                """
+            if not normalized:
+                return 0
 
-                inserted = 0
-                async with conn.transaction():
-                    for record in records:
-                        try:
-                            await conn.execute(query, *record)
-                            inserted += 1
-                        except Exception as exc:  # pragma: no cover - insert errors
-                            logger.warning(
-                                "Failed to insert candle for %s at %s: %s",
-                                symbol,
-                                record[1],
-                                exc,
-                            )
-                logger.info("Stored %s/%s candles for %s", inserted, len(records), symbol)
-                return inserted
+            settings = get_settings()
+            inserted = await self.upsert_bars_bulk(
+                normalized,
+                batch_size=settings.LIVE_BATCH_SIZE,
+                provider_used="legacy",
+            )
+            logger.info("Stored %s candles for %s", inserted, symbol)
+            return inserted
         except Exception as exc:
             logger.error("Error storing candle data for %s: %s", symbol, exc)
             raise
@@ -106,17 +94,18 @@ class DatabaseService:
         start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
         limit: int = 1000,
+        interval: str = "1d",
     ) -> List[Dict]:
         """Retrieve historical OHLCV candles."""
         try:
             async with self.get_connection() as conn:
                 query = """
-                    SELECT ts, open, high, low, close, volume
-                    FROM candles
-                    WHERE symbol = $1
+                    SELECT ts, o, h, l, c, v, status, as_of
+                    FROM candles_intraday
+                    WHERE symbol = $1 AND interval = $2
                 """
-                params: List = [symbol.upper()]
-                param_index = 1
+                params: List = [symbol.upper(), interval]
+                param_index = 2
 
                 if start_date:
                     param_index += 1
@@ -142,11 +131,13 @@ class DatabaseService:
                     candles.append(
                         {
                             "timestamp": row["ts"].isoformat(),
-                            "open": float(row["open"]),
-                            "high": float(row["high"]),
-                            "low": float(row["low"]),
-                            "close": float(row["close"]),
-                            "volume": int(row["volume"]),
+                            "open": float(row["o"]),
+                            "high": float(row["h"]),
+                            "low": float(row["l"]),
+                            "close": float(row["c"]),
+                            "volume": int(row["v"]),
+                            "status": row["status"],
+                            "as_of": row["as_of"].isoformat(),
                         }
                     )
 
@@ -156,48 +147,269 @@ class DatabaseService:
             logger.error("Error retrieving historical data for %s: %s", symbol, exc)
             raise
 
-    async def get_latest_candle(self, symbol: str) -> Optional[Dict]:
+    async def get_latest_candle(self, symbol: str, interval: str = "1d") -> Optional[Dict]:
         """Return the most recent candle for a symbol."""
         try:
             async with self.get_connection() as conn:
                 query = """
-                    SELECT ts, open, high, low, close, volume
-                    FROM candles
-                    WHERE symbol = $1
+                    SELECT ts, o, h, l, c, v, status, as_of
+                    FROM candles_intraday
+                    WHERE symbol = $1 AND interval = $2
                     ORDER BY ts DESC
                     LIMIT 1
                 """
-                row = await conn.fetchrow(query, symbol.upper())
+                row = await conn.fetchrow(query, symbol.upper(), interval)
                 if not row:
                     return None
                 return {
                     "timestamp": row["ts"].isoformat(),
-                    "open": float(row["open"]),
-                    "high": float(row["high"]),
-                    "low": float(row["low"]),
-                    "close": float(row["close"]),
-                    "volume": int(row["volume"]),
+                    "open": float(row["o"]),
+                    "high": float(row["h"]),
+                    "low": float(row["l"]),
+                    "close": float(row["c"]),
+                    "volume": int(row["v"]),
+                    "status": row["status"],
+                    "as_of": row["as_of"].isoformat(),
                 }
         except Exception as exc:
             logger.error("Error getting latest candle for %s: %s", symbol, exc)
             return None
 
-    async def get_data_coverage(self, symbol: str) -> Optional[Tuple[datetime, datetime]]:
+    async def get_data_coverage(self, symbol: str, interval: str = "1d") -> Optional[Tuple[datetime, datetime]]:
         """Return earliest and latest timestamps for a symbol."""
         try:
             async with self.get_connection() as conn:
                 query = """
                     SELECT MIN(ts) AS earliest, MAX(ts) AS latest
-                    FROM candles
-                    WHERE symbol = $1
+                    FROM candles_intraday
+                    WHERE symbol = $1 AND interval = $2
                 """
-                row = await conn.fetchrow(query, symbol.upper())
+                row = await conn.fetchrow(query, symbol.upper(), interval)
                 if row and row["earliest"] and row["latest"]:
                     return (row["earliest"], row["latest"])
                 return None
         except Exception as exc:
             logger.error("Error getting coverage for %s: %s", symbol, exc)
             return None
+
+    async def upsert_symbol_universe(self, rows: Iterable[Dict]) -> int:
+        rows = list(rows)
+        if not rows:
+            return 0
+
+        sql = """
+            INSERT INTO symbol_universe(symbol, exchange, asset_type, adv_21d, mkt_cap, tier, active, provider_symbol_map)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+            ON CONFLICT (symbol) DO UPDATE SET
+              exchange = EXCLUDED.exchange,
+              asset_type = EXCLUDED.asset_type,
+              adv_21d = EXCLUDED.adv_21d,
+              mkt_cap = EXCLUDED.mkt_cap,
+              tier = EXCLUDED.tier,
+              active = EXCLUDED.active,
+              provider_symbol_map = EXCLUDED.provider_symbol_map,
+              updated_at = NOW()
+        """
+
+        payload = []
+        for row in rows:
+            payload.append(
+                (
+                    row["symbol"].upper(),
+                    row.get("exchange", ""),
+                    row.get("asset_type", "equity"),
+                    row.get("adv_21d"),
+                    row.get("mkt_cap"),
+                    row.get("tier", "T2"),
+                    bool(row.get("active", True)),
+                    row.get("provider_symbol_map", {}),
+                )
+            )
+
+        async with self.get_connection() as conn:
+            async with conn.transaction():
+                await conn.executemany(sql, payload)
+
+        return len(payload)
+
+    async def record_universe_version(self, version_tag: str, source_meta: Dict[str, Any]) -> None:
+        sql = """
+            INSERT INTO universe_versions(version_tag, source_meta)
+            VALUES ($1, $2)
+        """
+        async with self.get_connection() as conn:
+            await conn.execute(sql, version_tag, json.dumps(source_meta))
+
+    async def get_symbols_by_tier(self, tier: str, limit: int, offset: int = 0) -> List[str]:
+        sql = """
+            SELECT symbol
+            FROM symbol_universe
+            WHERE active = TRUE AND tier = $1
+            ORDER BY adv_21d DESC NULLS LAST
+            LIMIT $2 OFFSET $3
+        """
+        async with self.get_connection() as conn:
+            rows = await conn.fetch(sql, tier, limit, offset)
+        return [row["symbol"] for row in rows]
+
+    async def get_cursor(self, symbol: str, interval: str, source: str) -> Optional[datetime]:
+        sql = """
+            SELECT last_ts
+            FROM ingestion_cursor
+            WHERE symbol = $1 AND interval = $2 AND source = $3
+        """
+        async with self.get_connection() as conn:
+            row = await conn.fetchrow(sql, symbol.upper(), interval, source)
+        return row["last_ts"] if row else None
+
+    async def update_cursor(
+        self,
+        symbol: str,
+        interval: str,
+        source: str,
+        last_ts: datetime,
+        status: str = "ok",
+    ) -> None:
+        sql = """
+            INSERT INTO ingestion_cursor(symbol, interval, source, last_ts, last_status, updated_at)
+            VALUES ($1,$2,$3,$4,$5,NOW())
+            ON CONFLICT (symbol, interval, source)
+            DO UPDATE SET last_ts = EXCLUDED.last_ts,
+                          last_status = EXCLUDED.last_status,
+                          updated_at = NOW()
+        """
+        async with self.get_connection() as conn:
+            await conn.execute(sql, symbol.upper(), interval, source, last_ts, status)
+
+    async def enqueue_backfill(
+        self,
+        symbol: str,
+        interval: str,
+        start_ts: datetime,
+        end_ts: datetime,
+        priority: str,
+    ) -> None:
+        sql = """
+            INSERT INTO backfill_jobs(symbol, interval, start_ts, end_ts, priority, status, attempts, created_at)
+            VALUES ($1,$2,$3,$4,$5,'queued',0,NOW())
+            ON CONFLICT (symbol, interval, start_ts, end_ts, priority)
+            DO NOTHING
+        """
+        async with self.get_connection() as conn:
+            await conn.execute(sql, symbol.upper(), interval, start_ts, end_ts, priority)
+
+    async def lease_backfill(self, priorities: Sequence[str], limit: int) -> List[Dict[str, Any]]:
+        sql = """
+            UPDATE backfill_jobs
+            SET status = 'leased', leased_at = NOW(), attempts = attempts + 1, updated_at = NOW()
+            WHERE id IN (
+              SELECT id
+              FROM backfill_jobs
+              WHERE status = 'queued' AND priority = ANY($1::text[])
+              ORDER BY
+                CASE priority WHEN 'T0' THEN 0 WHEN 'T1' THEN 1 ELSE 2 END,
+                created_at
+              FOR UPDATE SKIP LOCKED
+              LIMIT $2
+            )
+            RETURNING id, symbol, interval, start_ts, end_ts, priority, attempts
+        """
+        async with self.get_connection() as conn:
+            rows = await conn.fetch(sql, list(priorities), limit)
+
+        return [dict(row) for row in rows]
+
+    async def complete_backfill(self, job_id: int, ok: bool, reason: Optional[str] = None) -> None:
+        sql = """
+            UPDATE backfill_jobs
+            SET status = $2,
+                last_error = $3,
+                updated_at = NOW()
+            WHERE id = $1
+        """
+        status = "done" if ok else "failed"
+        async with self.get_connection() as conn:
+            await conn.execute(sql, job_id, status, reason or "")
+
+    async def backfill_queue_depth(self, priority: str) -> int:
+        sql = """
+            SELECT COUNT(1)
+            FROM backfill_jobs
+            WHERE status = 'queued' AND priority = $1
+        """
+        async with self.get_connection() as conn:
+            row = await conn.fetchrow(sql, priority)
+        return int(row["count"]) if row else 0
+
+    async def upsert_bars_bulk(
+        self,
+        bars: Iterable[Dict],
+        batch_size: int,
+        provider_used: str,
+    ) -> int:
+        bars_list = list(bars)
+        if not bars_list:
+            return 0
+
+        sql = """
+            INSERT INTO candles_intraday(symbol, ts, interval, o, h, l, c, v, provider, as_of, status)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            ON CONFLICT (symbol, ts, interval) DO UPDATE SET
+              o = EXCLUDED.o,
+              h = EXCLUDED.h,
+              l = EXCLUDED.l,
+              c = EXCLUDED.c,
+              v = EXCLUDED.v,
+              provider = EXCLUDED.provider,
+              as_of = EXCLUDED.as_of,
+              status = EXCLUDED.status
+        """
+
+        total = 0
+        async with self.get_connection() as conn:
+            async with conn.transaction():
+                chunk: List[Tuple] = []
+                for bar in bars_list:
+                    chunk.append(
+                        (
+                            bar["symbol"].upper(),
+                            bar["ts"],
+                            bar["interval"],
+                            float(bar["o"]),
+                            float(bar["h"]),
+                            float(bar["l"]),
+                            float(bar["c"]),
+                            float(bar.get("v", 0)),
+                            provider_used,
+                            bar.get("as_of", datetime.utcnow()),
+                            bar.get("status", "final"),
+                        )
+                    )
+
+                    if len(chunk) >= batch_size:
+                        started = perf_counter()
+                        await conn.executemany(sql, chunk)
+                        elapsed_ms = (perf_counter() - started) * 1000.0
+                        WRITE_BATCH_LATENCY.observe(elapsed_ms)
+                        total += len(chunk)
+                        chunk.clear()
+
+                if chunk:
+                    started = perf_counter()
+                    await conn.executemany(sql, chunk)
+                    elapsed_ms = (perf_counter() - started) * 1000.0
+                    WRITE_BATCH_LATENCY.observe(elapsed_ms)
+                    total += len(chunk)
+
+        try:
+            newest = max(bar["ts"] for bar in bars_list if bar.get("ts"))
+            interval = bars_list[0]["interval"]
+            lag_seconds = (datetime.utcnow() - newest).total_seconds()
+            INGESTION_LAG.labels(interval=interval).set(max(lag_seconds, 0.0))
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+        return total
 
     async def cleanup_old_data(self) -> Optional[int]:
         """Prune candles older than the retention policy."""

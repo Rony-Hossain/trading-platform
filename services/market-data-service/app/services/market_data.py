@@ -1,16 +1,21 @@
 import asyncio
 import logging
 import os
+import time
 from datetime import datetime, timezone
-from fastapi import HTTPException
 from typing import Dict, List, Optional
-from ..providers import YahooFinanceProvider, FinnhubProvider
+
+from fastapi import HTTPException
+
+from ..circuit_breaker import CircuitBreakerManager
+from ..core.config import get_settings
+from ..providers import FinnhubProvider, YahooFinanceProvider
+from ..providers.registry import ProviderRegistry
 from .cache import DataCache
-from .websocket import ConnectionManager
-from .macro_data_service import MacroFactorService
 from .database import db_service
+from .macro_data_service import MacroFactorService
 from .options_service import options_service
-from ..core.config import settings
+from .websocket import ConnectionManager
 
 logger = logging.getLogger(__name__)
 
@@ -26,77 +31,138 @@ class MarketDataService:
     }
 
     def __init__(self):
-        # Get Finnhub API key from environment (via settings/env)
-        finnhub_api_key = os.getenv("FINNHUB_API_KEY") or settings.finnhub_api_key
-        
-        # Initialize providers - only add Finnhub if we have a valid API key
-        self.providers = []
-        
-        if finnhub_api_key and finnhub_api_key != "your_finnhub_api_key_here":
-            try:
-                finnhub_provider = FinnhubProvider(api_key=finnhub_api_key)
-                self.providers.append(finnhub_provider)
-                logger.info("Finnhub provider initialized with API key")
-            except Exception as e:
-                logger.warning(f"Failed to initialize Finnhub provider: {e}")
-        else:
-            logger.warning("No valid Finnhub API key found. Using Yahoo Finance only.")
-        
-        # Always add Yahoo Finance as fallback
-        self.providers.append(YahooFinanceProvider())
-        
+        self.settings = get_settings()
+        self.breakers = CircuitBreakerManager()
+        self.registry = ProviderRegistry(self.breakers)
+
+        self._init_providers()
+        self.providers = [entry.adapter for entry in self.registry.providers.values()]
+
         # Cache TTL configurable via env/settings
-        self.cache = DataCache(ttl_seconds=int(os.getenv("CACHE_TTL_SECONDS", settings.cache_ttl_seconds)))
+        cache_ttl = int(os.getenv("CACHE_TTL_SECONDS", self.settings.cache_ttl_seconds))
+        self.cache = DataCache(ttl_seconds=cache_ttl)
         self.metrics_cache = DataCache(ttl_seconds=int(os.getenv("OPTIONS_METRICS_CACHE_TTL", "300")))
         self.options_metrics_ttl = int(os.getenv("OPTIONS_METRICS_TTL", "900"))
-        # Real-time broadcast interval (seconds)
         self.update_interval = int(os.getenv("WEBSOCKET_UPDATE_INTERVAL", "5"))
         self.connection_manager = ConnectionManager()
         self.macro_service = MacroFactorService(
             providers=self.providers,
-            cache_ttl_seconds=getattr(settings, "macro_cache_ttl_seconds", 300),
-            refresh_interval_seconds=getattr(settings, "macro_refresh_interval_seconds", 900),
+            cache_ttl_seconds=getattr(self.settings, "macro_cache_ttl_seconds", 300),
+            refresh_interval_seconds=getattr(self.settings, "macro_refresh_interval_seconds", 900),
         )
         self.background_tasks_running = False
+
+    def _init_providers(self) -> None:
+        """Register provider adapters with the routing registry."""
+        finnhub_key = (
+            os.getenv("FINNHUB_API_KEY")
+            or self.settings.finnhub.api_key
+            or self.settings.finnhub_api_key
+        )
+
+        if finnhub_key and finnhub_key not in {"your_finnhub_api_key_here", ""}:
+            try:
+                finnhub_provider = FinnhubProvider(api_key=finnhub_key)
+                self.registry.register("finnhub", finnhub_provider, {"bars_1m", "eod", "quotes_l1"})
+                logger.info("Finnhub provider registered")
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning("Failed to initialize Finnhub provider: %s", exc)
+        else:
+            logger.warning("No valid Finnhub API key provided; Finnhub disabled")
+
+        if self.settings.yfinance_enabled:
+            try:
+                yahoo_provider = YahooFinanceProvider()
+                self.registry.register("yfinance", yahoo_provider, {"bars_1m", "eod", "options_chain"})
+                logger.info("Yahoo Finance provider registered")
+            except Exception as exc:  # pragma: no cover
+                logger.warning("Failed to initialize Yahoo Finance provider: %s", exc)
+
+    def reload_configuration(self) -> None:
+        """Reload providers and settings after a hot reload."""
+        self.settings = get_settings()
+        self.registry.providers.clear()
+        self._init_providers()
+        self.providers = [entry.adapter for entry in self.registry.providers.values()]
+        if hasattr(self.macro_service, "providers"):
+            self.macro_service.providers = self.providers
+
+    async def _try_providers(
+        self,
+        *,
+        capability: str,
+        endpoint: str,
+        executor,
+        provider_hint: Optional[str] = None,
+    ):
+        ranked = self.registry.rank(capability, provider_hint=provider_hint)
+        if not ranked:
+            raise HTTPException(status_code=503, detail=f"No providers available for {capability}")
+
+        last_error: Optional[str] = None
+        for provider_name in ranked:
+            entry = self.registry.providers[provider_name]
+            adapter = entry.adapter
+            if not adapter.enabled:
+                continue
+
+            self.registry.record_selection(capability, provider_name)
+            started = time.perf_counter()
+
+            try:
+                result = await executor(adapter)
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                self.registry.record_outcome(provider_name, elapsed_ms, error=False, endpoint=endpoint)
+                if result:
+                    return result, provider_name
+                last_error = f"{provider_name}: empty result"
+            except HTTPException:
+                raise
+            except Exception as exc:  # pragma: no cover - provider failure paths
+                elapsed_ms = (time.perf_counter() - started) * 1000.0
+                self.registry.record_outcome(provider_name, elapsed_ms, error=True, endpoint=endpoint)
+                self.registry.record_error(provider_name, endpoint, exc.__class__.__name__)
+                last_error = f"{provider_name}: {exc}"
+
+        raise HTTPException(
+            status_code=502,
+            detail=f"All providers failed for {endpoint}. last_error={last_error}",
+        )
     
     async def get_stock_price(self, symbol: str) -> Dict:
-        """Get stock price with caching and fallback"""
+        """Get stock price with caching and health-aware routing."""
+        symbol = symbol.upper()
         cache_key = f"price:{symbol}"
-        
-        # Try cache first
+
         cached_data = self.cache.get(cache_key)
         if cached_data:
-            logger.info(f"Cache hit for {symbol}")
+            logger.info("Cache hit for %s", symbol)
             return cached_data
-        
-        # Try providers
-        for provider in self.providers:
-            if not provider.is_available:
-                continue
-                
-            data = await provider.get_price(symbol)
-            if data:
-                self.cache.set(cache_key, data)
-                logger.info(f"Fetched {symbol} from {provider.name}")
-                return data
-        
-        # No provider worked
-        raise HTTPException(
-            status_code=503,
-            detail=f"Unable to fetch data for {symbol} from any provider"
+
+        data, provider_used = await self._try_providers(
+            capability="quotes_l1",
+            endpoint="quotes",
+            executor=lambda adapter: adapter.get_price_safe(symbol),
         )
+
+        if isinstance(data, dict):
+            data["provider_used"] = provider_used
+        self.cache.set(cache_key, data)
+        logger.info("Fetched %s from %s", symbol, provider_used)
+        return data
     
     async def get_historical_data(self, symbol: str, period: str = "1mo") -> Dict:
-        """Get historical data"""
-        for provider in self.providers:
-            data = await provider.get_historical(symbol, period)
-            if data:
-                return data
-    
-        raise HTTPException(
-            status_code=503,
-            detail=f"Unable to fetch historical data for {symbol}"
+        """Get historical data."""
+        symbol = symbol.upper()
+        data, provider_used = await self._try_providers(
+            capability="eod",
+            endpoint="historical",
+            executor=lambda adapter: adapter.get_historical_safe(symbol, period),
         )
+
+        if isinstance(data, dict):
+            data["provider_used"] = provider_used
+        return data
 
     def _normalize_intraday_interval(self, interval: str) -> str:
         interval_normalized = (interval or "1m").strip().lower()
@@ -130,25 +196,16 @@ class MarketDataService:
         """Get intraday data with provider fallback and validation."""
         normalized_interval = self._normalize_intraday_interval(interval)
 
-        errors: List[str] = []
-        for provider in self.providers:
-            try:
-                data = await provider.get_intraday_safe(symbol, normalized_interval)
-                if data:
-                    return data
-                errors.append(f"{provider.name}: no data returned")
-            except HTTPException:
-                raise
-            except Exception as exc:
-                error_message = f"{provider.name}: {exc}"
-                errors.append(error_message)
-                logger.error("Intraday provider error for %s: %s", symbol, error_message)
-
-        error_detail = "; ".join(errors) if errors else "No provider returned intraday data"
-        raise HTTPException(
-            status_code=503,
-            detail=f"Unable to fetch intraday data for {symbol}: {error_detail}"
+        capability = "bars_1m" if normalized_interval.endswith("m") else "eod"
+        data, provider_used = await self._try_providers(
+            capability=capability,
+            endpoint="intraday",
+            executor=lambda adapter: adapter.get_intraday_safe(symbol, normalized_interval),
         )
+
+        if isinstance(data, dict):
+            data["provider_used"] = provider_used
+        return data
     
     async def start_background_tasks(self):
         """Start background tasks for cache cleanup and real-time updates"""
@@ -196,7 +253,11 @@ class MarketDataService:
 
     async def _macro_refresh_task(self):
         """Periodically refresh macro factors from configured providers."""
-        interval = getattr(self.macro_service, "refresh_interval_seconds", getattr(settings, "macro_refresh_interval_seconds", 900))
+        interval = getattr(
+            self.macro_service,
+            "refresh_interval_seconds",
+            getattr(self.settings, "macro_refresh_interval_seconds", 900),
+        )
         interval = max(60, interval or 900)
 
         try:
@@ -287,7 +348,7 @@ class MarketDataService:
             "websocket": self.connection_manager.stats(),
             "database": {
                 "connected": db_service.pool is not None,
-                "storage_enabled": settings.store_historical_data,
+                "storage_enabled": self.settings.store_historical_data,
             },
             "macro": macro_stats,
             "options_metrics": {
