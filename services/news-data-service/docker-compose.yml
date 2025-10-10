@@ -1,0 +1,48 @@
+version: "3.9"
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16-latest
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: news
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  flyway:
+    image: flyway/flyway:10
+    command: -url=jdbc:postgresql://postgres:5432/news -user=postgres -password=postgres -connectRetries=30 migrate
+    volumes:
+      - ./migrations:/flyway/sql
+    depends_on:
+      - postgres
+  news:
+    build: .
+    environment:
+      NEWS_PG_DSN: postgresql+asyncpg://postgres:postgres@postgres:5432/news
+      REDIS_URL: redis://redis:6379/0
+      SSE_REDIS_STREAM: news.events
+      PREFILTER_TTL_SECONDS: 172800
+      UPSERT_BATCH_SIZE: 200
+      UPSERT_FLUSH_MS: 20
+      CIRCUIT_TRIP_ERROR_RATE: 0.35
+      CIRCUIT_MIN_WINDOW: 50
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      FINNHUB_NEWS_CATEGORY: ${FINNHUB_NEWS_CATEGORY:-general}
+      FINNHUB_COMPANY_SYMBOLS: ${FINNHUB_COMPANY_SYMBOLS:-}
+      FINNHUB_COMPANY_WATCHLIST_FILE: ${FINNHUB_COMPANY_WATCHLIST_FILE:-/app/watchlist/watchlist.txt}
+      FINNHUB_COMPANY_WATCHLIST_REDIS_SET: ${FINNHUB_COMPANY_WATCHLIST_REDIS_SET:-}
+      WATCHLIST_REFRESH_SECONDS: ${WATCHLIST_REFRESH_SECONDS:-60}
+    volumes:
+      - ./watchlist.txt:/app/watchlist/watchlist.txt:ro
+    ports: ["8080:8080"]
+    depends_on:
+      - postgres
+      - redis
+      - flyway

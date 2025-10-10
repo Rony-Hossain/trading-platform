@@ -49,32 +49,22 @@ services:
     command: redis-server --appendonly yes
 
   redpanda:
-    image: docker.redpanda.com/vectorized/redpanda:v24.1.11
+    image: docker.redpanda.com/redpandadata/redpanda:latest
     command:
-      [
-        "redpanda",
-        "start",
-        "--smp",
-        "1",
-        "--overprovisioned",
-        "--node-id",
-        "0",
-        "--check=false",
-        "--reserve-memory",
-        "0M",
-        "--kafka-addr",
-        "PLAINTEXT://0.0.0.0:9092",
-        "--advertise-kafka-addr",
-        "PLAINTEXT://redpanda:9092",
-        "--pandaproxy-addr",
-        "0.0.0.0:8082",
-        "--advertise-pandaproxy-addr",
-        "redpanda:8082",
-        "--schema-registry-addr",
-        "0.0.0.0:8081",
-        "--advertise-schema-registry-addr",
-        "redpanda:8081"
-      ]
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=1G
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr=internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr=internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr=internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr=internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr=redpanda:33145
+      - --advertise-rpc-addr=redpanda:33145
+      - --mode=dev-container
     ports:
       - "9092:9092"
       - "8081:8081"
@@ -98,6 +88,8 @@ services:
       FINNHUB_API_KEY: ${FINNHUB_API_KEY}
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-5}
       WEBSOCKET_UPDATE_INTERVAL: ${WEBSOCKET_UPDATE_INTERVAL:-5}
+      VIZTRACER_ENABLED: "true"
+      VIZ_OUT_DIR: /app/traces
     depends_on:
       postgres:
         condition: service_healthy
@@ -202,7 +194,7 @@ services:
       KAFKA_TOPIC_UPDATES: policy.updates
       KAFKA_TOPIC_SHADOW: policy.shadow
       PG_DSN: postgresql://trading_user:trading_pass@postgres:5432/trading_db
-      PROVIDERS: providerA,providerB
+      PROVIDERS: '["polygon", "finnhub", "alpaca"]'
     depends_on:
       postgres:
         condition: service_healthy

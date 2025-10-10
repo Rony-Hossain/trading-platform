@@ -1,0 +1,8 @@
+# Company watchlist for Finnhub company news adapter
+# One symbol per line or comma-separated
+# Lines starting with # are comments
+
+AAPL, MSFT, GOOGL
+TSLA
+NVDA
+# Add more symbols as needed

@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 from .core.config import Settings, get_settings, hot_reload, validate_settings
 from .services import MarketDataService
 from .services.options_service import OptionContract, OptionsChain, options_service
+from .observability.trace import maybe_trace
 
 # Load environment variables
 load_dotenv()
@@ -192,16 +193,17 @@ async def trigger_backfill(payload: dict):
     """
     from .services.database import db_service
     req = {**payload}
-    try:
-        start = datetime.fromisoformat(req["start"].replace("Z", ""))
-        end = datetime.fromisoformat(req["end"].replace("Z", ""))
-    except Exception:
-        raise HTTPException(400, "Invalid start/end ISO8601")
+    with maybe_trace(f"backfill_{req.get('symbol', 'unknown')}"):
+        try:
+            start = datetime.fromisoformat(req["start"].replace("Z", ""))
+            end = datetime.fromisoformat(req["end"].replace("Z", ""))
+        except Exception:
+            raise HTTPException(400, "Invalid start/end ISO8601")
 
-    await db_service.enqueue_backfill(
-        req["symbol"], req.get("interval", "1m"), start, end, req.get("priority", "T2")
-    )
-    return {"enqueued": True}
+        await db_service.enqueue_backfill(
+            req["symbol"], req.get("interval", "1m"), start, end, req.get("priority", "T2")
+        )
+        return {"enqueued": True}
 
 @app.get("/factors/macro")
 async def get_macro_factors(factors: Optional[List[str]] = Query(None)):
@@ -227,12 +229,14 @@ async def refresh_macro_endpoint(factor: Optional[str] = Query(None)):
 @app.get("/stocks/{symbol}/price")
 async def get_stock_price(symbol: str):
     """Get current stock price"""
-    return await market_service.get_stock_price(symbol.upper())
+    with maybe_trace(f"get_price_{symbol}"):
+        return await market_service.get_stock_price(symbol.upper())
 
 @app.get("/stocks/{symbol}/history")
 async def get_historical_data(symbol: str, period: str = "1mo"):
     """Get historical stock data"""
-    return await market_service.get_historical_data(symbol.upper(), period)
+    with maybe_trace(f"get_history_{symbol}_{period}"):
+        return await market_service.get_historical_data(symbol.upper(), period)
 
 
 @app.get("/stocks/{symbol}/intraday")
@@ -472,13 +476,14 @@ async def options_websocket_path(websocket: WebSocket, symbol: str):
 @app.get("/options/{symbol}/chain")
 async def get_options_chain(symbol: str):
     """Return the full options chain for a symbol."""
-    try:
-        chain = await options_service.fetch_options_chain(symbol.upper())
-    except Exception as exc:
-        logger.error("Error fetching options chain for %s: %s", symbol, exc)
-        raise HTTPException(status_code=502, detail=f"Unable to fetch options chain for {symbol.upper()}") from exc
+    with maybe_trace(f"get_options_chain_{symbol}"):
+        try:
+            chain = await options_service.fetch_options_chain(symbol.upper())
+        except Exception as exc:
+            logger.error("Error fetching options chain for %s: %s", symbol, exc)
+            raise HTTPException(status_code=502, detail=f"Unable to fetch options chain for {symbol.upper()}") from exc
 
-    return jsonable_encoder(chain)
+        return jsonable_encoder(chain)
 
 
 def _validate_sentiment(sentiment: str, allowed: List[str]) -> str:
@@ -565,7 +570,8 @@ async def get_options_suggestions(
 @app.get("/options/{symbol}/metrics")
 async def get_options_metrics_endpoint(symbol: str):
     """Return latest ATM IV, skew, and implied move metrics."""
-    return await market_service.get_options_metrics(symbol.upper())
+    with maybe_trace(f"get_options_metrics_{symbol}"):
+        return await market_service.get_options_metrics(symbol.upper())
 
 
 @app.get("/options/{symbol}/metrics/history")
@@ -590,7 +596,8 @@ async def get_options_flow_analysis_endpoint(symbol: str):
 @app.get("/stocks/{symbol}/profile")
 async def get_company_profile(symbol: str):
     """Get company profile data"""
-    return await market_service.get_company_profile(symbol.upper())
+    with maybe_trace(f"get_profile_{symbol}"):
+        return await market_service.get_company_profile(symbol.upper())
 
 @app.get("/stocks/{symbol}/sentiment")
 async def get_news_sentiment(symbol: str):
